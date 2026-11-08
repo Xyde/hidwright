@@ -1,0 +1,8 @@
+# Python bytecode
+__pycache__/
+
+# Runtime files written on this PC (comments must be on their own line in .gitignore)
+# sign-in loader log, written by mouse_startup.py
+startup.log
+# only exists while a test-DPI calibration run is in progress
+dpi_restore.json

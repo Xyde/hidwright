@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mouse-portal",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["mouse_portal.py", "--no-browser", "--port", "8650"],
+      "port": 8650,
+      "autoPort": false,
+      "url": "http://127.0.0.1:8650"
+    }
+  ]
+}

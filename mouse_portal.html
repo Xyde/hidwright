@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mouse Portal</title>
+<style>
+  :root {
+    --bg: #f4f5f8; --panel: #ffffff; --panel-2: #eef0f5; --ink: #151821; --muted: #5d6475;
+    --line: #dde1ea; --accent: #6a3df0; --accent-ink: #ffffff; --pulsar: #6a3df0;
+    --razer: #1f9d55; --warn: #b45309; --warn-bg: #fff4e5; --ok: #1f9d55; --bad: #c62828;
+    --glow: 0 0 0 transparent;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b0d12; --panel: #141821; --panel-2: #1b2030; --ink: #e9ecf4; --muted: #9aa3b8;
+      --line: #262c3d; --accent: #8b6cff; --accent-ink: #0b0d12; --pulsar: #8b6cff;
+      --razer: #44d17a; --warn: #fbbf24; --warn-bg: #2a2110; --ok: #44d17a; --bad: #ff6b6b;
+      --glow: 0 0 40px rgba(139, 108, 255, .12);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0d12; --panel: #141821; --panel-2: #1b2030; --ink: #e9ecf4; --muted: #9aa3b8;
+    --line: #262c3d; --accent: #8b6cff; --accent-ink: #0b0d12; --pulsar: #8b6cff;
+    --razer: #44d17a; --warn: #fbbf24; --warn-bg: #2a2110; --ok: #44d17a; --bad: #ff6b6b;
+    --glow: 0 0 40px rgba(139, 108, 255, .12);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 16px 60px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 26px; letter-spacing: -.02em; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); margin: 4px 0 0; font-size: 14px; }
+  button, select, input { font: inherit; color: inherit; }
+  .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 12px;
+         cursor: pointer; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn:disabled { opacity: .5; cursor: progress; }
+
+  .compare { margin: 22px 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+             overflow: hidden; box-shadow: var(--glow); }
+  .compare table { width: 100%; border-collapse: collapse; }
+  .compare th, .compare td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--line); }
+  .compare tr:last-child td { border-bottom: 0; }
+  .compare th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+  .compare td:first-child { color: var(--muted); width: 28%; }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px; margin-left: 6px; }
+  .tag.diff { background: var(--warn-bg); color: var(--warn); }
+  .tag.same { color: var(--ok); }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px;
+          border-top: 3px solid var(--c); box-shadow: var(--glow); min-width: 0; }
+  .card h2 { margin: 0; font-size: 19px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); }
+  .meta { color: var(--muted); font-size: 13px; margin: 2px 0 14px; }
+  .section { margin-top: 16px; }
+  .section h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+                margin: 0 0 8px; font-weight: 600; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0;
+         border-bottom: 1px dashed var(--line); flex-wrap: wrap; }
+  .row:last-child { border-bottom: 0; }
+  .row .k { color: var(--muted); }
+  .row .note { font-size: 12px; color: var(--muted); width: 100%; margin-top: -2px; }
+  select, input[type=text], input[type=number] { background: var(--panel-2); border: 1px solid var(--line);
+         border-radius: 7px; padding: 5px 8px; min-width: 0; }
+  .switch { position: relative; width: 42px; height: 24px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; background: var(--panel-2); border: 1px solid var(--line);
+                 border-radius: 99px; cursor: pointer; transition: .15s; }
+  .switch span::before { content: ""; position: absolute; width: 18px; height: 18px; left: 2px; top: 2px;
+                 border-radius: 50%; background: var(--muted); transition: .15s; }
+  .switch input:checked + span { background: var(--accent); border-color: var(--accent); }
+  .switch input:checked + span::before { transform: translateX(18px); background: var(--accent-ink); }
+
+  .stages { display: flex; flex-wrap: wrap; gap: 8px; }
+  .stage { display: flex; align-items: center; gap: 6px; background: var(--panel-2); border: 1px solid var(--line);
+           border-radius: 9px; padding: 5px 8px; }
+  .stage.on { border-color: var(--c); box-shadow: 0 0 0 1px var(--c) inset; }
+  .stage input[type=number] { width: 78px; }
+  .stage .x { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 2px; }
+  .chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 5px 10px;
+          font-variant-numeric: tabular-nums; }
+  .chip.on { border-color: var(--c); color: var(--c); font-weight: 600; }
+
+  .bind { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) 92px; gap: 8px; align-items: center;
+          padding: 6px 0; border-bottom: 1px dashed var(--line); }
+  .bind:last-child { border-bottom: 0; }
+  .bind .lbl { font-size: 14px; }
+  .bind .lbl small { display: block; color: var(--muted); font-size: 12px; }
+  .bind input { width: 100%; }
+  .changed { color: var(--warn); }
+  .missing { color: var(--muted); padding: 30px 0; text-align: center; }
+
+  .tester { margin-top: 18px; }
+  .pad { margin-top: 10px; height: 170px; border: 1px dashed var(--line); border-radius: 12px; display: grid;
+         place-items: center; user-select: none; cursor: crosshair; background: var(--panel-2); text-align: center;
+         color: var(--muted); }
+  .pad.flash { outline: 2px solid var(--accent); }
+  .stats { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  .stats b { font-size: 20px; display: block; color: var(--ink); }
+  .stats div { color: var(--muted); font-size: 13px; }
+  .stats .alert b { color: var(--bad); }
+
+  .rot { margin-top: 18px; }
+  .ratable { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  .ratable th, .ratable td { padding: 8px 6px; text-align: left; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .ratable th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+  .ratable input { width: 84px; }
+  .ratable tr.pending td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .live { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--line);
+          margin-right: 7px; vertical-align: 1px; transition: background .1s, box-shadow .1s; }
+  .live.on { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+  .warnline { background: var(--warn-bg); color: var(--warn); border-radius: 9px; padding: 8px 12px; margin: 10px 0 0; font-size: 14px; }
+  .launch { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-top: 16px; padding-top: 14px;
+            border-top: 1px dashed var(--line); }
+  .launch input[type=number] { width: 64px; margin-left: 6px; }
+  .launch .chk { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; }
+  .scroll-x { overflow-x: auto; }
+
+  /* full-screen calibrator */
+  .cal { position: fixed; inset: 0; z-index: 50; background: var(--bg); color: var(--ink); user-select: none; }
+  .cal[hidden] { display: none; }
+  .cal.recording { cursor: none; }
+  .cal canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cal-top { position: absolute; top: 22px; left: 28px; right: 28px; display: flex; justify-content: space-between;
+             align-items: baseline; gap: 16px; pointer-events: none; }
+  .cal-dev { font-size: 15px; color: var(--muted); }
+  .cal-dev b { color: var(--ink); }
+  .cal-count { font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .cal-count small { font-size: 20px; color: var(--muted); font-weight: 500; }
+  .cal-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center;
+                width: min(620px, calc(100% - 32px)); }
+  .cal-center h2 { font-size: 30px; margin: 0 0 10px; letter-spacing: -.02em; }
+  .cal-center p { color: var(--muted); margin: 6px 0; font-size: 16px; }
+  .cal-center .angle { font-size: 88px; font-weight: 800; letter-spacing: -.04em; line-height: 1; margin: 6px 0 10px;
+                       font-variant-numeric: tabular-nums; }
+  .cal-center .panel { background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line);
+                       border-radius: 16px; padding: 26px 24px; backdrop-filter: blur(6px); }
+  .cal-center .opts { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; margin: 16px 0 4px; }
+  .cal-center .opts input[type=number] { width: 64px; margin-left: 6px; }
+  .cal-center .ok { color: var(--ok); font-weight: 600; }
+  .cal-center .warn { color: var(--warn); }
+  .cal-bottom { position: absolute; bottom: 22px; left: 0; right: 0; text-align: center; color: var(--muted); font-size: 15px; }
+  kbd { font: 600 13px/1 ui-monospace, monospace; padding: 3px 7px; border: 1px solid var(--line); border-bottom-width: 2px;
+        border-radius: 6px; background: var(--panel-2); color: var(--ink); }
+
+  #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink);
+           color: var(--bg); padding: 9px 16px; border-radius: 10px; font-size: 14px; opacity: 0;
+           transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
+  #toast.show { opacity: 1; }
+  #toast.err { background: var(--bad); color: #fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Mouse <span>Portal</span></h1>
+      <p class="sub">Settings live inside each mouse. This page just reads and writes them; it adds no latency.</p>
+    </div>
+    <button class="btn" id="refresh">↻ Refresh</button>
+  </header>
+
+  <div class="compare" id="compare"></div>
+
+  <div class="grid">
+    <section class="card" id="pulsar" style="--c: var(--pulsar)"><div class="missing">Looking for the Pulsar…</div></section>
+    <section class="card" id="razer" style="--c: var(--razer)"><div class="missing">Looking for the Razer…</div></section>
+  </div>
+
+  <section class="card rot" style="--c: var(--accent)">
+    <h2><span class="dot"></span>Rotation calibrator</h2>
+    <p class="meta">Measures the angle your hand naturally swipes at with each mouse, then sets RawAccel's rotation
+      for that mouse only. The portal tells the mice apart, so it always knows which one you're swiping with.</p>
+    <div id="raStatus"><div class="missing">Reading RawAccel…</div></div>
+
+    <div class="launch">
+      <label>Swipes <input type="number" id="calN" min="4" max="50" step="1" value="10"></label>
+      <label>Test at <select id="calDpi">
+        <option value="0">current DPI</option><option value="3200">3200 DPI</option><option value="1600">1600 DPI</option>
+        <option value="800">800 DPI</option><option value="400">400 DPI</option></select></label>
+      <label class="chk"><input type="checkbox" id="calAuto"> Apply to RawAccel automatically when done</label>
+      <button class="btn primary" id="calOpen">⛶ Calibrate (full screen)</button>
+    </div>
+    <div id="calLast" class="meta" style="margin-top:8px"></div>
+  </section>
+
+  <div id="cal" class="cal" hidden>
+    <canvas id="calCanvas"></canvas>
+    <div class="cal-top">
+      <div class="cal-dev" id="calDev">Mouse Portal · rotation calibrator</div>
+      <div class="cal-count" id="calCount"></div>
+    </div>
+    <div class="cal-center" id="calCenter"></div>
+    <div class="cal-bottom" id="calHint"></div>
+  </div>
+
+  <section class="card tester" style="--c: var(--accent)">
+    <h2><span class="dot"></span>Click tester</h2>
+    <p class="meta">Click fast inside the box. Two clicks of the same button closer than 40 ms almost always mean
+      switch chatter (an accidental double click). If you see any, raise the debounce a step.</p>
+    <div class="pad" id="pad">Click here<br><small>left · right · middle · side buttons</small></div>
+    <div class="stats">
+      <div><b id="sClicks">0</b>clicks</div>
+      <div><b id="sLast">–</b>last button</div>
+      <div><b id="sFast">–</b>fastest same-button gap</div>
+      <div id="sChatterBox"><b id="sChatter">0</b>suspected chatter (&lt; 40 ms)</div>
+      <div><button class="btn" id="resetTest">Reset</button></div>
+    </div>
+  </section>
+</div>
+<div id="toast"></div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let state = { pulsar: null, razer: null };
+let viewProfile = null;
+
+function toast(msg, err = false) {
+  const t = $("#toast"); t.textContent = msg; t.className = "show" + (err ? " err" : "");
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.className = "", 2600);
+}
+
+async function load() {
+  $("#refresh").disabled = true;
+  try {
+    const r = await fetch("/api/mice" + (viewProfile ? "?profile=" + viewProfile : ""));
+    state = await r.json();
+    render();
+  } catch (e) { toast("Can't reach the portal server. Is mouse_portal.py running?", true); }
+  $("#refresh").disabled = false;
+}
+
+async function send(body, okMsg) {
+  document.body.style.cursor = "progress";
+  try {
+    const r = await fetch("/api/pulsar", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile: viewProfile, ...body }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    state.pulsar = data; render(); toast(okMsg || "Saved to the mouse ✓");
+  } catch (e) { toast(e.message, true); render(); }
+  document.body.style.cursor = "";
+}
+
+function render() { renderCompare(); renderPulsar(); renderRazer(); }
+
+function renderCompare() {
+  const p = state.pulsar, z = state.razer;
+  const val = (m, k) => m && m.present ? m[k] : null;
+  const pDpi = p && p.present ? p.dpi_stages[p.dpi_active - 1] : null;
+  const rows = [
+    ["Current DPI", pDpi, val(z, "dpi")],
+    ["Polling rate", val(p, "polling") && p.polling + " Hz", val(z, "polling") && z.polling + " Hz"],
+    ["Debounce", val(p, "debounce") != null ? p.debounce + " ms" : null, val(z, "debounce")],
+    ["Firmware", val(p, "firmware"), val(z, "firmware")],
+  ];
+  $("#compare").innerHTML = `<table><thead><tr><th>Side by side</th><th>Pulsar X2A</th><th>Razer Viper</th></tr></thead><tbody>${
+    rows.map(([k, a, b]) => {
+      let tag = "";
+      if (k === "Current DPI" && a && b) tag = a === b ? `<span class="tag same">match</span>` : `<span class="tag diff">differs</span>`;
+      if (k === "Polling rate" && a && b) tag = a === b ? `<span class="tag same">match</span>` : `<span class="tag diff">differs</span>`;
+      return `<tr><td>${k}</td><td>${esc(a ?? "–")}</td><td>${esc(b ?? "–")} ${tag}</td></tr>`;
+    }).join("")}</tbody></table>`;
+}
+
+function renderPulsar() {
+  const p = state.pulsar, el = $("#pulsar");
+  if (!p) return;
+  if (!p.present) { el.innerHTML = `<h2><span class="dot"></span>Pulsar X2A</h2><div class="missing">${esc(p.error)}</div>`; return; }
+  const prof = p.profile;
+  const tgl = (name, label, note) => `<div class="row"><span>${label}</span>
+      <label class="switch"><input type="checkbox" data-toggle="${name}" ${p.toggles[name] ? "checked" : ""}><span></span></label>
+      ${note ? `<div class="note">${note}</div>` : ""}</div>`;
+  el.innerHTML = `
+    <h2><span class="dot"></span>Pulsar X2A</h2>
+    <div class="meta">firmware ${esc(p.firmware)} · editable · changes save to the mouse instantly</div>
+
+    <div class="row"><span class="k">Profile</span>
+      <span>viewing <select id="viewProf">${[1,2,3,4,5].map(n => `<option ${n===prof?"selected":""}>${n}</option>`).join("")}</select>
+      ${prof === p.active_profile ? `<span class="tag same">active</span>` : `<button class="btn" id="makeActive">Make active</button>`}</span></div>
+
+    <div class="section"><h3>Global (all profiles)</h3>
+      <div class="row"><span>Polling rate</span>
+        <select id="poll">${p.polling_options.map(h => `<option value="${h}" ${h===p.polling?"selected":""}>${h} Hz</option>`).join("")}</select></div>
+      <div class="row"><span>Debounce</span>
+        <select id="deb">${Array.from({length: 21}, (_, i) => `<option value="${i}" ${i===p.debounce?"selected":""}>${i} ms${i===3?" (factory)":""}</option>`).join("")}</select>
+        <div class="note">Lower = clicks register sooner. Too low can turn one click into two. Check with the click tester below.</div></div>
+      ${tgl("ripple", "Ripple control", "Smooths sensor jitter at high DPI, at the cost of a little delay.")}
+      ${tgl("motion-sync", "Motion sync", "Aligns sensor reads with USB polls. Smoother, slightly later.")}
+      ${tgl("angle-snap", "Angle snapping", "Straightens your lines. Most players keep it off.")}
+    </div>
+
+    <div class="section"><h3>DPI stages · profile ${prof}</h3>
+      <div class="stages" id="stages">${p.dpi_stages.map((d, i) => `
+        <div class="stage ${i+1===p.dpi_active?"on":""}">
+          <input type="radio" name="act" value="${i+1}" ${i+1===p.dpi_active?"checked":""} title="active stage">
+          <input type="number" min="100" max="26000" step="100" value="${d}">
+          ${p.dpi_stages.length > 1 ? `<button class="x" title="remove">✕</button>` : ""}
+        </div>`).join("")}
+        ${p.dpi_stages.length < 6 ? `<button class="btn" id="addStage">+ stage</button>` : ""}
+      </div>
+      <div style="margin-top:10px"><button class="btn primary" id="saveDpi">Save DPI</button></div>
+    </div>
+
+    <div class="section"><h3>Lift-off distance · profile ${prof}</h3>
+      <div class="row"><span>${esc(p.lod)}</span>
+        <span><button class="btn" data-lod="1">1 mm</button> <button class="btn" data-lod="2">2 mm</button></span>
+        <div class="note">Experimental: this setting's encoding is borrowed from another Pulsar model.</div></div>
+    </div>
+
+    <div class="section"><h3>Buttons · profile ${prof}</h3>
+      <datalist id="funcs">${["left","right","middle","back","forward","dpiloop","dpi+","dpi-","scrollup","scrolldown",
+        "profile+","profile-","doubleclick","disabled","default","vol+","vol-","mute","play","next","prev",
+        "ctrl+c","ctrl+v","shift","ctrl","alt","space","f5"].map(f => `<option value="${f}">`).join("")}</datalist>
+      ${p.buttons.map(b => `
+        <div class="bind"><div class="lbl">${esc(b.label)}<small class="${b.default?"":"changed"}">${esc(b.binding)}${b.default?"":" · changed"}</small></div>
+          <input type="text" list="funcs" placeholder="new function…" data-btn="${b.key}">
+          <span><button class="btn" data-save="${b.key}">Set</button>${b.default?"":` <button class="btn" data-reset="${b.key}" title="factory">↺</button>`}</span>
+        </div>`).join("")}
+    </div>`;
+
+  $("#viewProf").onchange = e => { viewProfile = +e.target.value; load(); };
+  const ma = $("#makeActive"); if (ma) ma.onclick = () => send({ action: "profile", value: prof }, `Profile ${prof} is now active ✓`);
+  $("#poll").onchange = e => send({ action: "poll", value: +e.target.value });
+  $("#deb").onchange = e => send({ action: "debounce", value: +e.target.value });
+  el.querySelectorAll("[data-toggle]").forEach(c => c.onchange = () => send({ action: "toggle", name: c.dataset.toggle, value: c.checked }));
+  el.querySelectorAll("[data-lod]").forEach(b => b.onclick = () => send({ action: "lod", value: +b.dataset.lod }));
+
+  const stagesEl = $("#stages");
+  const readStages = () => [...stagesEl.querySelectorAll(".stage")].map(s => +s.querySelector("input[type=number]").value);
+  stagesEl.querySelectorAll(".x").forEach((x, i) => x.onclick = () => {
+    const d = readStages(); d.splice(i, 1);
+    p.dpi_stages = d; p.dpi_active = Math.min(p.dpi_active, d.length); renderPulsar();
+  });
+  const add = $("#addStage"); if (add) add.onclick = () => {
+    const d = readStages(); d.push(Math.min(26000, (d[d.length-1] || 800) * 2)); p.dpi_stages = d; renderPulsar();
+  };
+  $("#saveDpi").onclick = () => {
+    const act = +(stagesEl.querySelector("input[type=radio]:checked")?.value || 1);
+    send({ action: "dpi", dpis: readStages(), active: act }, "DPI saved to the mouse ✓");
+  };
+  el.querySelectorAll("[data-save]").forEach(b => b.onclick = () => {
+    const inp = el.querySelector(`input[data-btn="${b.dataset.save}"]`);
+    if (!inp.value.trim()) return toast("Type a function first, e.g. back, dpi+, ctrl+c", true);
+    send({ action: "bind", button: b.dataset.save, function: inp.value.trim() });
+  });
+  el.querySelectorAll("[data-reset]").forEach(b => b.onclick = () => send({ action: "bind", button: b.dataset.reset, function: "default" }, "Back to factory ✓"));
+}
+
+function renderRazer() {
+  const z = state.razer, el = $("#razer");
+  if (!z) return;
+  if (!z.present) { el.innerHTML = `<h2><span class="dot"></span>Razer Viper</h2><div class="missing">${esc(z.error)}</div>`; return; }
+  el.innerHTML = `
+    <h2><span class="dot"></span>Razer Viper</h2>
+    <div class="meta">firmware ${esc(z.firmware)} · read-only</div>
+    <div class="section"><h3>Settings</h3>
+      <div class="row"><span>Polling rate</span><span>${esc(z.polling)} Hz</span></div>
+      <div class="row"><span>Current DPI</span><span>${esc(z.dpi)}</span></div>
+      <div class="row"><span>Debounce</span><span>none</span>
+        <div class="note">Optical switches: a light beam, no metal contacts that bounce, so no debounce delay.</div></div>
+    </div>
+    <div class="section"><h3>DPI stages</h3>
+      <div class="stages">${z.dpi_stages.map((d, i) => `<span class="chip ${i+1===z.dpi_active?"on":""}">${d}</span>`).join("")}</div>
+    </div>`;
+}
+
+// ---- click tester
+const names = { 0: "left", 1: "middle", 2: "right", 3: "back", 4: "forward" };
+let clicks = 0, chatter = 0, fastest = Infinity, lastAt = {};
+const pad = $("#pad");
+pad.addEventListener("contextmenu", e => e.preventDefault());
+pad.addEventListener("mousedown", e => {
+  e.preventDefault();
+  const now = performance.now(), b = e.button;
+  clicks++;
+  if (lastAt[b] != null) {
+    const gap = now - lastAt[b];
+    fastest = Math.min(fastest, gap);
+    if (gap < 40) chatter++;
+  }
+  lastAt[b] = now;
+  $("#sClicks").textContent = clicks;
+  $("#sLast").textContent = names[b] ?? "button " + b;
+  $("#sFast").textContent = isFinite(fastest) ? fastest.toFixed(1) + " ms" : "–";
+  $("#sChatter").textContent = chatter;
+  $("#sChatterBox").className = chatter ? "alert" : "";
+  pad.classList.add("flash"); setTimeout(() => pad.classList.remove("flash"), 70);
+});
+pad.addEventListener("auxclick", e => e.preventDefault());
+$("#resetTest").onclick = () => {
+  clicks = chatter = 0; fastest = Infinity; lastAt = {};
+  ["#sClicks", "#sChatter"].forEach(s => $(s).textContent = "0");
+  ["#sLast", "#sFast"].forEach(s => $(s).textContent = "–");
+  $("#sChatterBox").className = "";
+};
+
+// ---- RawAccel status + per-mouse rotation
+let ra = null, pendingRot = {};
+const fmtDeg = d => (d > 0 ? "+" : "") + Number(d).toFixed(1) + "°";
+
+async function loadRawAccel() {
+  try { ra = await (await fetch("/api/rawaccel")).json(); } catch { ra = { found: false }; }
+  renderRawAccel();
+}
+
+function renderRawAccel() {
+  const el = $("#raStatus");
+  if (!ra || !ra.found) { el.innerHTML = `<div class="warnline">RawAccel's settings.json wasn't found, so rotations can't be applied. Measuring still works.</div>`; return; }
+  if (!ra.mice.length) { el.innerHTML = `<div class="missing">No known mice seen yet.</div>`; return; }
+  const groups = {};
+  ra.mice.filter(m => m.shared_with.length && m.rotation !== 0).forEach(m => (groups[m.profile] ??= []).push(m));
+  const warn = Object.entries(groups).map(([p, ms]) =>
+    `${esc(ms.map(m => m.name).join(" and "))} share the “${esc(p)}” profile, so they all get <b>${fmtDeg(ms[0].rotation)}</b>.`);
+  el.innerHTML = `
+    <div class="scroll-x"><table class="ratable"><thead><tr><th>Mouse</th><th>RawAccel profile</th><th>Rotation now</th><th>New rotation</th></tr></thead><tbody>
+    ${ra.mice.map(m => {
+      const v = pendingRot[m.id] ?? m.rotation;
+      return `<tr class="${pendingRot[m.id] != null && pendingRot[m.id] !== m.rotation ? "pending" : ""}">
+        <td><span class="live" data-live="${esc(m.id)}"></span>${esc(m.name)}</td>
+        <td>${esc(m.profile)}${m.own_profile ? "" : ` <span class="tag diff">shared</span>`}</td>
+        <td>${fmtDeg(m.rotation)}</td>
+        <td><input type="number" step="0.1" min="-45" max="45" value="${v}" data-rot="${esc(m.id)}"> °</td></tr>`;
+    }).join("")}</tbody></table></div>
+    ${warn.length ? `<div class="warnline">${warn.join("<br>")} Applying gives each mouse its own profile, so one mouse's rotation never affects the other.</div>` : ""}
+    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+      <button class="btn primary" id="raApply">Apply to RawAccel</button>
+      <span class="meta" style="margin:0">Each mouse gets its own profile, a copy of its current one with only the rotation changed. Your settings.json is backed up first.</span>
+    </div>`;
+  el.querySelectorAll("[data-rot]").forEach(i => i.oninput = () => {
+    pendingRot[i.dataset.rot] = parseFloat(i.value); i.closest("tr").classList.add("pending"); });
+  $("#raApply").onclick = applyRawAccel;
+}
+
+async function applyRawAccel() {
+  const changes = ra.mice.map(m => ({ id: m.id, name: m.name, rotation: pendingRot[m.id] ?? m.rotation }))
+    .filter(c => { const m = ra.mice.find(x => x.id === c.id); return c.rotation !== m.rotation || !m.own_profile; });
+  if (!changes.length) return toast("Nothing to change.");
+  if (changes.some(c => isNaN(c.rotation) || Math.abs(c.rotation) > 45)) return toast("Rotation must be between -45 and 45°", true);
+  const lines = changes.map(c => `• ${c.name}: ${fmtDeg(c.rotation)} (own profile)`).join("\n");
+  if (!confirm(`Write these to RawAccel and load them now?\n\n${lines}\n\nsettings.json is backed up first.`)) return;
+  try {
+    const d = await applyChanges(changes);
+    toast("Applied to RawAccel ✓  Backup: " + d.backup.split("\\").pop());
+  } catch (e) { toast(e.message, true); }
+}
+
+async function applyChanges(changes) {
+  const r = await fetch("/api/rawaccel/apply", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ changes: changes.map(({ id, rotation }) => ({ id, rotation })) }) });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error);
+  ra = d.state; pendingRot = {}; renderRawAccel();
+  return d;
+}
+
+// live "which mouse is moving" dots
+async function pollMotion() {
+  if (!document.hidden) {
+    try {
+      const m = await (await fetch("/api/motion")).json();
+      for (const d of m.devices) document.querySelectorAll(`[data-live="${CSS.escape(d.id)}"]`)
+        .forEach(x => x.classList.toggle("on", d.moving));
+    } catch {}
+  }
+  setTimeout(pollMotion, calibrating ? 400 : 250);
+}
+
+// ---- full-screen calibrator: keyboard only, so clicking never ends up in the measurement
+// phases: "setup" (Space = start) -> "recording" (auto-finishes after N swipes) -> "result" (Space = again, Enter = apply)
+let calibrating = false, calPhase = null, lastResult = null, calBusy = false;
+const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { return null; } };
+const calN = () => Math.max(4, Math.min(50, parseInt($("#calN").value) || 10));
+$("#calN").value = pref("calN") || 10;
+$("#calAuto").checked = pref("calAuto") === "1";
+$("#calN").onchange = () => { $("#calN").value = calN(); pref("calN", calN()); };
+const calDpi = () => parseInt($("#calDpi").value) || 0;
+$("#calDpi").value = pref("calDpi") || "0";
+if (!$("#calDpi").value) $("#calDpi").value = "0";
+$("#calDpi").onchange = () => pref("calDpi", String(calDpi()));
+const dpiLabel = d => d ? `${d} DPI` : "current DPI";
+$("#calAuto").onchange = () => pref("calAuto", $("#calAuto").checked ? "1" : "0");
+
+const post = (p, b = {}) => fetch(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then(r => r.json());
+
+async function calOpen() {
+  document.activeElement?.blur();  // so Space doesn't re-press the button
+  const el = $("#cal"); el.hidden = false;
+  document.body.style.overflow = "hidden";
+  calSetup();
+  // don't wait on this: some browsers never settle the promise; it still works as a full-window overlay
+  try { el.requestFullscreen({ navigationUI: "hide" }).then(() => drawCal(lastResult), () => {}); } catch {}
+}
+
+function calClose() {
+  if (calStream) { calStream.close(); calStream = null; }
+  if (calibrating) { calibrating = false; post("/api/calib/stop"); }
+  calPhase = null; $("#cal").hidden = true; $("#cal").classList.remove("recording");
+  document.body.style.overflow = "";
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  if (lastResult) showLastSummary();
+}
+
+function calSetup() {
+  calPhase = "setup"; lastResult = null; drawCal(null);
+  $("#calDev").innerHTML = "Mouse Portal · rotation calibrator";
+  $("#calCount").innerHTML = "";
+  $("#calCenter").innerHTML = `<div class="panel">
+    <h2>Hold the mouse you want to calibrate</h2>
+    <p>Use your normal grip. Swipe left and right in what feels like a straight line, the way you aim in a game.</p>
+    <div class="opts">
+      <label>Swipes <input type="number" id="ovN" min="4" max="50" value="${calN()}"></label>
+      <label>Test at <select id="ovDpi">${[0, 3200, 1600, 800, 400].map(d =>
+        `<option value="${d}" ${d === calDpi() ? "selected" : ""}>${dpiLabel(d)}</option>`).join("")}</select></label>
+      <label><input type="checkbox" id="ovAuto" ${$("#calAuto").checked ? "checked" : ""}> Apply to RawAccel automatically</label>
+    </div>
+    <p style="font-size:14px">Higher DPI = small wrist flicks · lower DPI = big arm swipes. Both mice switch to the
+      test DPI only for the run and switch back afterwards.</p>
+    <p style="margin-top:18px; font-size:18px">Press <kbd>Space</kbd> to start</p></div>`;
+  $("#ovDpi").onchange = e => { $("#calDpi").value = e.target.value; $("#calDpi").onchange(); e.target.blur(); };
+  $("#calHint").innerHTML = `<kbd>Esc</kbd> exit`;
+  $("#ovN").onchange = e => { $("#calN").value = e.target.value; $("#calN").onchange(); e.target.value = calN(); e.target.blur(); };
+  $("#ovAuto").onchange = e => { $("#calAuto").checked = e.target.checked; $("#calAuto").onchange(); e.target.blur(); };
+}
+
+async function calStart() {
+  if (calBusy) return;
+  calBusy = true;
+  const dpi = calDpi();
+  if (dpi) $("#calCenter").innerHTML = `<div class="panel"><h2>Switching to ${dpi} DPI…</h2></div>`;
+  let started;
+  try {
+    const r = await fetch("/api/calib/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dpi }) });
+    started = await r.json();
+    if (!r.ok) throw new Error(started.error || r.statusText);
+  } catch (e) {
+    calBusy = false;
+    $("#calCenter").innerHTML = `<div class="panel"><h2>Couldn't start</h2><p class="warn">${esc(e.message)}</p></div>`;
+    $("#calHint").innerHTML = `<kbd>Space</kbd> try again · <kbd>Esc</kbd> exit`;
+    calPhase = "result";
+    return;
+  }
+  calBusy = false;
+  calibrating = true; calPhase = "recording"; lastResult = null;
+  $("#cal").classList.add("recording");
+  $("#calCenter").innerHTML = "";
+  $("#calCount").innerHTML = `0<small> / ${calN()}</small>`;
+  $("#calDev").innerHTML = "Waiting for movement…";
+  $("#calHint").innerHTML = `Swipe left and right · finishes by itself after ${calN()} swipes · <kbd>Space</kbd> finish now · <kbd>Esc</kbd> cancel`;
+  drawCal(null);
+  // live view: the server pushes new movement as it happens; we analyse + draw every frame
+  live = newLive();
+  calStream = new EventSource("/api/calib/stream");
+  calStream.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.device && !live.device) { live.device = d.device; live.dpi = d.dpi; live.hyst = d.hyst; live.min = d.min; }
+    if (d.deltas.length) { for (const [dx, dy] of d.deltas) liveAdd(live, dx, dy); live.lastMove = performance.now(); live.dirty = true; }
+  };
+  requestAnimationFrame(calFrame);
+}
+
+// same maths as rawinput_monitor.analyze(), done incrementally for the live view.
+// Swipe thresholds come from the server per DPI (real distance: 2.5 mm to turn, 1 cm per swipe).
+let live = null, calStream = null;
+function newLive() {
+  return { pts: [[0, 0]], x: 0, y: 0, sxx: 0, syy: 0, sxy: 0, start: [0, 0], peak: [0, 0], dir: 0,
+           completed: 0, device: null, dpi: null, hyst: 160, min: 640, lastMove: performance.now(), dirty: true };
+}
+function liveAdd(L, dx, dy) {
+  L.x += dx; L.y += dy; const p = [L.x, L.y]; L.pts.push(p);
+  L.sxx += dx * dx; L.syy += dy * dy; L.sxy += dx * dy;
+  if (L.dir === 0) {
+    if (Math.abs(p[0] - L.start[0]) > L.hyst) { L.dir = p[0] > L.start[0] ? 1 : -1; L.peak = p; }
+  } else if ((p[0] - L.peak[0]) * L.dir >= 0) L.peak = p;
+  else if (Math.abs(p[0] - L.peak[0]) > L.hyst) {
+    if (Math.abs(L.peak[0] - L.start[0]) >= L.min) L.completed++;
+    L.start = L.peak; L.peak = p; L.dir = -L.dir;
+  }
+}
+const liveSwipes = L => L.completed + (L.dir && Math.abs(L.peak[0] - L.start[0]) >= L.min ? 1 : 0);
+const liveAngle = L => (L.sxx || L.syy) ? 0.5 * Math.atan2(2 * L.sxy, L.sxx - L.syy) * 180 / Math.PI : 0;
+
+function calFrame() {
+  if (calPhase !== "recording" || !live) return;
+  if (live.dirty) {
+    live.dirty = false;
+    const angle = liveAngle(live), n = calN(), sw = liveSwipes(live);
+    drawCal({ path: live.pts, angle });
+    if (live.device) $("#calDev").innerHTML = `<b>${esc(live.device.name)}</b> · ${live.dpi ? live.dpi + " DPI · " : ""}${fmtDeg(angle)}`;
+    $("#calCount").innerHTML = `${Math.min(sw, n)}<small> / ${n}</small>`;
+  }
+  // done once N swipes are finished (the hand turned around after the Nth), or N reached and the mouse went still
+  const n = calN();
+  if (live.completed >= n || (liveSwipes(live) >= n && performance.now() - live.lastMove > 500)) { calFinish(); return; }
+  requestAnimationFrame(calFrame);
+}
+
+async function calFinish() {
+  if (!calibrating) return;
+  calibrating = false;
+  if (calStream) { calStream.close(); calStream = null; }
+  $("#cal").classList.remove("recording");
+  const s = await post("/api/calib/stop");
+  drawCal(s);
+  calPhase = "result";
+  $("#calDev").innerHTML = s.device ? `<b>${esc(s.device.name)}</b> · result` : "No mouse movement seen";
+  if (!s.device || s.swipes < 3) {
+    $("#calCenter").innerHTML = `<div class="panel"><h2>Not enough swipes</h2><p>Make longer left-right swipes with one mouse.</p></div>`;
+    $("#calHint").innerHTML = `<kbd>Space</kbd> try again · <kbd>Esc</kbd> exit`;
+    return;
+  }
+  const m = ra && ra.found ? ra.mice.find(x => x.id === s.device.id) : null;
+  const cur = m ? m.rotation : 0;
+  const rec = Math.round((cur - s.angle) * 10) / 10;
+  lastResult = { ...s, mouse: m, cur, rec, applied: false };
+  const dir = Math.abs(s.angle) < 0.05 ? "dead straight" : s.angle > 0 ? "slightly downward going right" : "slightly upward going right";
+  const tiny = Math.abs(s.angle) < 0.5;
+  const shaky = s.spread != null && s.spread > 3;
+  let applyLine = "";
+  if (!m) applyLine = `<p>RawAccel rotation can't be set for this mouse here.</p>`;
+  else if (tiny) applyLine = `<p class="ok">Within half a degree: nothing to fix ✓</p>`;
+  else applyLine = `<p>Recommended RawAccel rotation for ${esc(s.device.name)}: <b>${fmtDeg(rec)}</b>
+      <span style="color:var(--muted)">(now ${fmtDeg(cur)})</span></p><p id="calApplyState"></p>`;
+  const restored = s.restored && !s.restored.error ? Object.entries(s.restored).map(([n, d]) => `${esc(n)} ${d}`).join(", ") : "";
+  $("#calCenter").innerHTML = `<div class="panel">
+    <p>${esc(s.device.name)} · ${s.dpi ? s.dpi + " DPI · " : ""}${s.swipes} swipes${s.spread != null ? ` · consistency ±${s.spread.toFixed(1)}°` : ""}</p>
+    <div class="angle">${fmtDeg(s.angle)}</div>
+    <p>Your swipes go ${dir}${m && cur ? `, measured with RawAccel's ${fmtDeg(cur)} already applied` : ""}.</p>
+    ${shaky ? `<p class="warn">Your swipes varied a lot. Another run with steadier swipes will give a better number.</p>` : ""}
+    ${applyLine}
+    ${restored ? `<p style="font-size:13px">DPI back to normal: ${restored} ✓</p>` : ""}
+    ${s.restored && s.restored.error ? `<p class="warn" style="font-size:13px">Couldn't put the DPI back yet (${esc(s.restored.error)}). It'll be retried next time the portal or set-mouse starts.</p>` : ""}</div>`;
+  const canApply = m && !tiny;
+  $("#calHint").innerHTML = `${canApply ? `<kbd>Enter</kbd> apply ${fmtDeg(rec)} · ` : ""}<kbd>Space</kbd> run again · <kbd>Esc</kbd> done`;
+  if (canApply && $("#calAuto").checked && !shaky) calApply();
+  else if (canApply && $("#calAuto").checked && shaky) $("#calApplyState").innerHTML = `<span class="warn">Not applied automatically because the swipes were too uneven.</span>`;
+}
+
+async function calApply() {
+  const r = lastResult;
+  if (!r || !r.mouse || r.applied || calBusy) return;
+  calBusy = true;
+  const st = $("#calApplyState"); if (st) st.innerHTML = "Applying…";
+  try {
+    await applyChanges([{ id: r.mouse.id, name: r.mouse.name, rotation: r.rec }]);
+    r.applied = true;
+    if (st) st.innerHTML = `<span class="ok">Applied ✓ ${esc(r.mouse.name)} is now ${fmtDeg(r.rec)}. Run again to check: it should read about 0°.</span>`;
+    $("#calHint").innerHTML = `<kbd>Space</kbd> run again to check · <kbd>Esc</kbd> done`;
+  } catch (e) { if (st) st.innerHTML = `<span class="warn">${esc(e.message)}</span>`; }
+  calBusy = false;
+}
+
+function showLastSummary() {
+  const r = lastResult;
+  $("#calLast").innerHTML = `Last run: ${esc(r.device.name)} ${fmtDeg(r.angle)}${r.applied ? ` · applied ${fmtDeg(r.rec)}` : ""}`;
+}
+
+function drawCal(s) {
+  const c = $("#calCanvas"), dpr = devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (!w) return;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement);
+  g.strokeStyle = css.getPropertyValue("--line"); g.setLineDash([6, 8]); g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke(); g.setLineDash([]);
+  const pts = s && s.path;
+  if (!pts || pts.length < 2) return;
+  let minx = Infinity, maxx = -Infinity, sy = 0;
+  for (const [x, y] of pts) { minx = Math.min(minx, x); maxx = Math.max(maxx, x); sy += y; }
+  const cx = (minx + maxx) / 2, cy = sy / pts.length;
+  const scale = Math.min((w - 80) / Math.max(1, maxx - minx), 1.5);  // same scale on both axes: angles stay true
+  const X = x => w / 2 + (x - cx) * scale, Y = y => h / 2 + (y - cy) * scale;
+  g.strokeStyle = css.getPropertyValue("--accent"); g.globalAlpha = .6; g.lineWidth = 2;
+  const step = Math.max(1, Math.ceil(pts.length / 5000));  // keep long runs cheap to draw
+  g.beginPath(); g.moveTo(X(pts[0][0]), Y(pts[0][1]));
+  for (let i = step; i < pts.length; i += step) g.lineTo(X(pts[i][0]), Y(pts[i][1]));
+  const last = pts[pts.length - 1]; g.lineTo(X(last[0]), Y(last[1])); g.stroke();
+  g.globalAlpha = 1;
+  const a = s.angle * Math.PI / 180, L = w;
+  g.strokeStyle = css.getPropertyValue("--warn"); g.lineWidth = 3;
+  g.beginPath(); g.moveTo(w / 2 - Math.cos(a) * L, h / 2 - Math.sin(a) * L); g.lineTo(w / 2 + Math.cos(a) * L, h / 2 + Math.sin(a) * L); g.stroke();
+}
+
+document.addEventListener("keydown", e => {
+  if (!calPhase) return;
+  if (e.target.matches && e.target.matches("input")) return;  // typing the swipe count
+  if (e.code === "Space") {
+    e.preventDefault();
+    if (calPhase === "recording") calFinish(); else calStart();
+  } else if (e.code === "Enter" && calPhase === "result") { e.preventDefault(); calApply(); }
+  else if (e.code === "Escape") { e.preventDefault(); calClose(); }
+});
+document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && calPhase) calClose(); });
+// closing the tab mid-run: stop it so the test DPI gets put back right away
+window.addEventListener("pagehide", () => { if (calibrating) navigator.sendBeacon("/api/calib/stop", "{}"); });
+window.addEventListener("resize", () => { if (calPhase) drawCal(lastResult); });
+$("#calOpen").onclick = calOpen;
+
+$("#refresh").onclick = () => { load(); loadRawAccel(); };
+load();
+loadRawAccel();
+pollMotion();
+</script>
+</body>
+</html>
