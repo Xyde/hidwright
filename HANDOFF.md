@@ -2,6 +2,8 @@
 
 _Written 2026-11-06 ~16:40 by Claude (Claude Code desktop session); updated 2026-11-08 when the folder became a jj repo and open threads became `tk` tickets. Replaces the previous HANDOFF.md (history is in jj from now on)._
 
+> **Since this handoff (2026-11-08, later the same day):** the user decided to port everything to **Rust + egui** (smallest footprint) and to replace Razer Synapse fully. Epic `px-0oek`. Phase 1 is done: a Cargo workspace at the repo root (`crates/mouse-core`, `crates/set-mouse`) reads the Pulsar with output identical to the Python. The Python stays on PATH and in the sign-in task until parity. On Windows the HID layer calls Win32 directly (`windows-sys`), and on macOS it uses `hidapi` (never built yet). The user also wants it on their Mac Studio: tickets `px-e6p0`, `px-sk2o`, `px-gnry`. The Pulsar's debounce and ripple had reverted to factory (3 ms / on) after a reboot; they were re-applied, and the persistence test is `px-337u`. The sections below describe the Python version and are otherwise still accurate. `tk ready` lists what's next.
+
 ## Resume here
 
 - **What this is:** A small, bloat-free, self-built replacement for vendor mouse software on Windows. `set-mouse` (CLI) plus the "Mouse Portal" (local web page) configure a **Pulsar X2A** directly over USB HID, read a **Razer Viper**, and give each mouse its own **RawAccel** rotation. Rotation is measured with a built-in full-screen calibrator.

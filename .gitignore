@@ -6,3 +6,6 @@ __pycache__/
 startup.log
 # only exists while a test-DPI calibration run is in progress
 dpi_restore.json
+
+# Rust build output
+target/

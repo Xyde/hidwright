@@ -1,0 +1,15 @@
+[workspace]
+resolver = "3"
+members = ["crates/mouse-core", "crates/set-mouse"]
+
+[workspace.package]
+edition = "2024"
+publish = false
+
+# Small, self-contained binaries: link-time optimisation, one codegen unit,
+# no symbols, and abort on panic (no unwinding tables).
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

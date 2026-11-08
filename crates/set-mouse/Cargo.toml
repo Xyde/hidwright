@@ -1,0 +1,9 @@
+[package]
+name = "set-mouse"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "One command for all mouse settings"
+
+[dependencies]
+mouse-core = { path = "../mouse-core" }
