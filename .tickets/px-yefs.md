@@ -1,6 +1,6 @@
 ---
 id: px-yefs
-status: in_progress
+status: closed
 deps: [px-5xrv]
 links: []
 created: 2026-11-08T22:34:08Z
@@ -39,3 +39,7 @@ Rollback: schtasks /Create /TN "Mouse Portal - load RawAccel" /XML "<project>\ta
 **2026-11-09T20:33:40Z**
 
 2026-11-09: user repointed the task (schtasks /Change; the run-as password prompt left empty: the account has none and the task is Interactive / run only when logged on, so none is needed). Verified: action = bin\set-mouse-startup.exe, principal unchanged (Interactive, Limited), manual run 15:31:48 -> LastTaskResult 0, startup.log line 15:31:49 identical to the Python's. CI 42693897148 green (Windows, macOS, Python). Left: user reboots once; agent then checks Get-ScheduledTaskInfo (LastRunTime = that sign-in, result 0) and the startup.log line, then closes this ticket.
+
+**2026-11-09T22:44:46Z**
+
+2026-11-09 VERIFIED across a real reboot (boot 17:34:33): task 'Mouse Portal - load RawAccel' ran bin\set-mouse-startup.exe at 17:34:52, LastTaskResult 0; startup.log '17:34:58  RawAccel settings loaded (default: -2.6 deg, Pulsar X2A: -0.5 deg, Xtrfy M42: 0.0 deg)'; set-mouse rotation shows all three. Also: Pulsar kept debounce 1 ms / ripple off through the reboot (px-337u fix holds).

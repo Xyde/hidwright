@@ -1,245 +1,216 @@
 # Handoff: hidwright (set-mouse, Mouse Portal, Rust port)
 
-_Written 2026-11-09 by Claude (Claude Code desktop session). Replaces the previous HANDOFF.md (history is in jj). This file is **public** (github.com/Xyde/hidwright): paths use `~` for the user's home folder, and it contains no names, serials or PC names. Keep it that way._
+_Written 2026-11-09 ~19:00 by Claude (Claude Code desktop session). Replaces the previous HANDOFF.md (history is in jj). This file is **public** (github.com/Xyde/hidwright): paths use `~` for the user's home folder, and it contains no names, serials or PC names. Keep it that way._
 
 ## Resume here
 
-- **What this is:** `hidwright`, a self-built, bloat-free replacement for vendor peripheral software. The local folder is still named `pulsar-x2a`. In daily use since 2026-11-09: **`set-mouse` on PATH runs the Rust exe** (`bin\set-mouse.cmd` → `target\release\set-mouse.exe`, Python fallback). Still **Python**: the Mouse Portal (`set-mouse portal` is handed to it), the rotation calibrator inside it, and the sign-in loader. It configures a Pulsar X2A over HID, reads a Razer Viper, and gives each mouse its own RawAccel rotation. A **Rust + egui rewrite** is in progress in `crates/` (epic `px-0oek`). Goals: replace Razer Synapse completely, cover more peripherals (Xtrfy M42, Dumang DK6 keyboard), and run on the user's Mac Studio too.
-- **Where it stands:** Rust reads both mice with output identical to the Python, and fixes the Python's Synapse read collisions. Rust also writes every Pulsar setting (`px-5xrv` part a) and does RawAccel rotation, `reload` and the interrupted-calibration DPI restore (part b), all 2026-11-09: same packets, same messages and byte-identical `settings.json` as the Python, checked on the hardware. Rust also controls the Viper fully (`px-36ci`, 2026-11-09: saved DPI stages, polling, logo lighting and brightness, from OpenRazer's byte layouts, round-trip-tested on the mouse). Only the portal is still Python-only. Both versions now check that each X2A reply echoes its request (the mouse was sometimes read as leftover replies, see Decisions). Public repo with CI green on Windows and macOS. The Pulsar's global settings now survive an unplug (`px-337u`, solved 2026-11-09: writes must carry the active profile byte, not 0). The mouse is at the user's chosen debounce 1 ms / ripple off.
+- **What this is:** `hidwright`, a self-built, bloat-free replacement for vendor peripheral software (local folder still named `pulsar-x2a`). `set-mouse` on PATH runs the **Rust** exe (`bin\set-mouse.cmd` → `target\release\set-mouse.exe`, Python fallback). The sign-in loader is Rust too (`bin\set-mouse-startup.exe`). Still Python: the Mouse Portal (`set-mouse portal`) and its rotation calibrator. It configures a Pulsar X2A and a Razer Viper over HID and gives each mouse its own RawAccel rotation. Being ported to Rust + egui in `crates/` (epic `px-0oek`). Goals: no vendor software at all, more peripherals (Xtrfy M42, Dumang DK6), and the user's Mac Studio too.
+- **Where it stands:** Rust does everything the Python CLI did, plus full Viper control (DPI stages, polling, logo lighting, brightness). **Razer Synapse is completely removed** (`px-23l1`, closed): no app, service, driver or ghost device entry is left, and the Viper runs on Microsoft drivers only. **One problem remains on the Viper:** its own memory has 3 side buttons set to type keys (Enter, Right arrow, Left arrow) and the DPI button set to "Hypershift", so the DPI button never changes DPI (`px-oqc3`). The user chose the target: **factory defaults**. How to get there is the user's open decision (`px-fmim`).
 - **Next action:**
-  1. `px-yefs`: the sign-in task already runs the Rust loader (`bin\set-mouse-startup.exe`). After the user's next reboot, check `Get-ScheduledTaskInfo` (LastRunTime = that sign-in, result 0) and the new `startup.log` line, then close the ticket.
-  2. Then the user picks between the **Synapse-free trial** (`px-23l1`; its checklist is in the ticket notes: device mode back to normal, replug persistence test) and the **egui portal** (`px-01cy`, the biggest remaining phase). The agent recommends the trial first: it's the user's stated goal, it's now possible (Rust covers everything Synapse does in hardware), and it settles the open Viper questions before the portal is designed.
+  1. **Ask the user** to decide `px-fmim`: (A) Synapse 3 from the offline-setups mirror + a USB capture, so Razer itself writes the buttons and we record the exact bytes; or (B) write the 4 buttons directly (`px-oqc3`; command layout from razerqdhid's source code, confirmed by every read from this Viper). The agent leans to B (faster, well-founded); A is the purist route the user asked about.
+  2. Then do it. For B: rewrite button `06` with its own value first, then one button at a time: write, read back with `02/8C`, the user presses it once in **Notepad focused with the Pulsar** (the Viper's side buttons type keys). Done when all four read back as `back`/`forward`/`DPI next` and behave that way.
+  3. The user also decides `px-ut0y` (keep or remove USBPcap) and pushes (`px-cfcv`).
 - **Paste into a fresh session:**
-  > Read HANDOFF.md in ~\Documents\pulsar-x2a first. Run `jj st`, `tk ready` and `set-mouse` to confirm the repo, the tickets, the mice and RawAccel still match "Current state", then continue with the next action (px-yefs reboot check, then ask me: Synapse trial px-23l1 or egui portal px-01cy). Explain what you're doing as you go.
+  > Read HANDOFF.md in ~\Documents\pulsar-x2a first. Run `jj st`, `tk ready` and `set-mouse` to confirm the repo, the tickets, the mice and RawAccel still match "Current state". Then ask me to decide px-fmim (Synapse 3 capture or direct button writes) and continue with the Viper button fix. Explain what you're doing as you go, in short, plain sentences.
 
 ## Goal and constraints (user's words)
 
-Earlier sessions (still in force):
-- "i want it that way for everything" / "I haev a razer who I do not want to swap that setting out of": left/right swapped everywhere, but **only on the Pulsar**.
+Standing (earlier sessions):
+- "i want it that way for everything" / "I haev a razer who I do not want to swap that setting out of": left/right swapped, **only on the Pulsar**.
 - "i hate the idea of pulsar fusion -- maybe it has BLOAT … let's see if we can make a BETTER DRIVER or SOFTWARE": our own minimal tool; no vendor software.
-- "if I want things to be as latency low…": settings live in mouse firmware or the RawAccel driver; nothing of ours sits in the input path.
-- "I do not want Viper's rotations on my mouse": a RawAccel rotation per mouse.
-- "have OUR solution to start with the equivalent of launchd": a sign-in task instead of the RawAccel GUI.
-- Calibrator: full screen, keyboard only, "auto after 10 swipes … configured right before the test", test at a lower DPI.
+- "if I want things to be as latency low…": settings live in mouse memory or the RawAccel driver; nothing of ours sits in the input path.
+- "I do not want Viper's rotations on my mouse": one RawAccel rotation per mouse. "the M42 is its own shape and shouldn't rely on other's."
+- "have OUR solution to start with the equivalent of launchd": a sign-in task, not the RawAccel GUI.
+- "The objective is to see if our app can totally replace what Synapse does! … I'm looking forward to delete Synapse fully" (done 2026-11-09). "It's best that our tool will be as thorough as possible."
+- "smallest footprint is which one...?" → "Then egui then": Rust + egui. "I would like to move around between the two machines" (Windows PC + Mac Studio; the user games on the Mac and builds their own Metal + Rust engine).
+- "something to manage my peripherals would be... COOL"; Dumang: "some keys like "Layout Toggling" that I would love to see if it's "bindable" to my mouse(s)".
+- "OF COURSE we should scrub our names for anonymity!": no personal data in the public repo; things work without editing paths.
+- "You choose the name." / "You choose the next path with the least blast radius.": the agent picks, explains, records.
 
-This session (2026-11-08/09):
-- "The objective is to see if our app can totally replace what Synapse does! … I'm looking forward to delete Synapse fully": goal `px-23l1`.
-- "It's best that our tool will be as thorough as possible.": cover everything the Viper (and other devices) can do, not the minimum.
-- "wouldn't our tool be better if it's then made to Rust?", then "smallest footprint is which one...?", then "Then egui then": Rust + egui.
-- "I would like to move around between the two machines" (Windows PC + Mac Studio); "I use my Mac for gaming"; the user is building their own FPS game with a custom Metal + Rust engine on the Mac: "it always bothered me that I didn't have a tool that could adapt".
-- "something to manage my peripherals would be... COOL": the scope is peripherals, not just these two mice.
-- Dumang: "some keys like "Layout Toggling" that I would love to see if it's "bindable" to my mouse(s)".
-- "the M42 is its own shape and shouldn't rely on other's.": every mouse gets its own settings; none borrows another's.
-- "OF COURSE we should scrub our names for anonymity! but use generic placeholders … any downloader even a random grandma … can do it easily": no personal data in the repo; things work without editing paths.
-- "You choose the name." / "You choose the next path with the least blast radius." / "go with what you'd like!": the agent picks, explains, and records.
-- From the user's global instructions: they direct and decide; explain what and why ("I like learning along the way, and rushing to an MVP isn't my thing"); jj only, no git commands; never push without an explicit yes; tickets in `tk`; shells for the user: Nushell, then PowerShell.
+This session (2026-11-09):
+- "Go forward: remove Razer fully" (after the Synapse-off-but-drivers-kept state broke the Viper).
+- On the button fix: "wouldn't it help? Than rely on an imperfect tool … we are relying on an imperfrection...?" → the user prefers **ground truth** (what Razer itself sends, or what the mouse itself says) over second-hand write-ups. Then: "let's go with USB capture then...!", "what matters is really to find something that writes to on-board memory, huh?", and found the Synapse 3 offline-setups repo.
+- Button target: "Factory defaults" (side buttons back/forward on both sides, DPI button cycles stages).
+- On USBPcap: "why remove the usbpcap … what if it's useful for the future" → keep/remove is the user's call (`px-ut0y`).
+- "make sure that the tickets and etc are properly stored and nothing is forgotten".
+- From the user's global instructions (updated 2026-11-09): English is their second language, so **short sentences, plain words, explain a technical word the first time with a small example**; **don't guess what they mean, ask one short question**; **say exactly what to do** (which command, which window, what they should see). They direct and decide; jj only, no git commands; never push without an explicit yes; every to-do goes into `tk`; shells for the user: Nushell first, then PowerShell.
 
 ## Decisions
 
 | Decision | Why | Rejected alternative | When |
 |---|---|---|---|
-| Swap L/R in the Pulsar's onboard memory (profile 1) | Works everywhere incl. raw-input games, zero latency, Razer untouched | Windows "Primary mouse button" (swaps all mice); per-game setting | early |
-| Own tool, no vendor software; Python + ctypes first | User dislikes bloat; the tool runs ~1 s and exits | Pulsar Fusion; Synapse | early |
-| Pulsar ripple off, debounce 1 ms, DPI 3200 single stage | Latency; 1 ms tested "0 chatter"; matches the Viper's 3200 | ripple on; 0 ms (bounce); RawAccel DPI normalisation | early |
-| Per-mouse RawAccel profiles via `settings.json` `devices[]` | The driver supports it (`driver/driver.cpp` `DeviceSetup`); only the GUI lacks it | One shared profile | early |
-| Sign-in Task Scheduler task runs the loader once | RawAccel forgets settings on reboot; no resident process | Startup shortcut; always-on portal | early |
-| **Replace Synapse fully** (`px-23l1`) | User goal. For the Viper, Synapse only adds spectrum lighting at 70%; DPI stages/polling are in the mouse; no remaps or macros | Keep Synapse | 2026-11-08 |
-| **"As thorough as possible"**: full Viper control incl. lighting (`px-w1a0`); `px-hkts` closed as yes | User wants a complete Synapse replacement | Read-only Viper | 2026-11-08 |
-| **Port to Rust + egui** (`px-izgb`) | Smallest footprint: one small exe, no WebView2 processes. Rust also gives one binary with no Python install, ms start-up, typed packet code. No latency gain (nothing of ours is in the input path), and the user was told so | Tauri (WebView2 adds ~4-6 processes and ~100-200 MB while open); tiny web server + browser; staying in Python | 2026-11-08 |
-| Python stays the reference and the daily tool until each Rust phase matches it byte for byte | Safe migration; tests are generated from the Python | Big-bang rewrite | 2026-11-08 |
-| **Windows HID via `windows-sys` directly** (SetupAPI paths + hid.dll); **`hidapi` only on macOS** (feature `macos-shared-device`) | On Windows, `HidApi::new()` reads every HID device's strings/descriptors (~150 ms, twice per open). `new_without_enumerate` is deprecated and still enumerates on Windows. hidapi also can't report `FeatureReportByteLength`, which the Viper needs. Result: find+open 2.5 ms; Rust `info` ~110 ms vs Python ~178 ms (~100 ms is mouse round trips) | `hidapi` everywhere | 2026-11-08 |
-| Phase order: Viper **reads** before any writes | User asked for the least blast radius: zero device/driver writes | Starting with Pulsar writes | 2026-11-08 |
-| Viper: on a reply with status OK but another command's class/id, **resend** (up to 8) | Synapse shares the reply buffer. Measured with Synapse running: Python failed a field in 8/30 runs, Rust 0/30 (`px-wfee`, closed) | Fail on mismatch (Python behaviour) | 2026-11-08 |
-| M42 gets its **own** RawAccel profile `Xtrfy M42` at 0° | It was falling into `profiles[0]` = the Viper's -2.6°; user: "shouldn't rely on other's" | Leave on default; change `default` to 0° (still open: `px-xtv5`) | 2026-11-08 |
-| Repo **public** as `github.com/Xyde/hidwright`, MIT licence | Free unlimited Actions incl. macOS runners (Mac code compiles in CI without the Mac). Name chosen by the agent: HID + "wright" (maker), not tied to one brand | Private repo; name `pulsar-x2a` (too narrow) | 2026-11-08/09 |
-| Scrub history before the first push; RawAccel folder **auto-detected** | User: anonymity, and anyone can run it without editing paths | Placeholders users must fill in | 2026-11-08 |
-| Rust code uses rustfmt defaults; CI runs fmt, clippy `-D warnings`, tests, release build on Windows + macOS, and py_compile | Every push is checked on both OSes | No CI | 2026-11-09 |
-| Dumang layer switching from a mouse: computer relays a key to a `BoardSyncPacket` (`px-k3jg`) | A mouse can't press keyboard keys; the DK6 accepts layer changes from the host | Firmware-only (impossible across devices) | 2026-11-08 |
-| Dumang protocol: **reimplement from the packet format**, don't copy code | Upstream `mayanez/dumang-keyboard-ctrl` is GPL-3.0; copying would force GPL on the repo | Porting its code | 2026-11-08 |
-| Mac gaming: for the user's **own engine**, apply rotation inside the engine from a per-mouse profile our tool provides (`px-sk2o`, user to decide) | No RawAccel on macOS; inside the engine it's free and adds no latency | CGEventTap (in the input path; games reading HID bypass it); DriverKit driver (Apple signing, big) | 2026-11-08 |
-| **X2A globals are written with the active profile byte** (`px-337u`) | Profile byte 0 changes RAM only (lost on unplug); 1-5 also saves. Replug-verified for debounce + ripple | Upstream's 0; a sign-in re-apply | 2026-11-09 |
-| **X2A replies must echo their request** (category, register, profile byte if set, first payload byte if set), in Rust and Python | The mouse keeps its last reply (status 0x01) until it has processed the next request. Early polls, mostly in a fresh session right after another one, read leftovers: shifted button bindings, firmware `03.09.0B.01` (a button reply). Measured: 936 read replies and 8 write-ack kinds fit the rule; afterwards 15/15 status runs matched | Status byte only (both versions before); comparing byte 3 (DPI reads answer with sub 0x21) | 2026-11-09 |
-| RawAccel in Rust via **`serde_json` + `preserve_order`**; output mimics Python's `json.dumps(indent=2)` + CRLF + `\uXXXX` | Keeps RawAccel's key order and comment keys; a rewrite is byte-identical, so changes are clean diffs. Verified on the real 7.6 KB file | Hand-written JSON (risk); sorted keys | 2026-11-09 |
-| Rust `startup.log` / `dpi_restore.json` live in the **Python install's folder** (`data_dir()` finds `mouse_startup.py` up to 3 folders above the exe), else next to the exe | The Python portal writes `dpi_restore.json` there; one shared log. Temporary until `px-t5i3` | `%LOCALAPPDATA%` (Python wouldn't see it) | 2026-11-09 |
-| **PATH shim runs the Rust exe from `target\release`** (no copy into `bin\`); `portal` and a missing exe go to the Python (`px-5xrv` part c) | Parity shown on the hardware; no install step to forget, no stale copy; a fresh clone without Rust still works | Copy the exe into `bin\` (stale after rebuilds); Rust-only shim (breaks without a build) | 2026-11-09 |
-| **Sign-in loader = separate windowed exe `set-mouse-startup`**, run by the task from a **copy in `bin\`** (`px-yefs`) | Windowed-subsystem exe: Windows creates no console, nothing flashes, no wrapper process. A copy, because a task can't fall back like the shim: after `cargo clean`, a task pointing into `target\` would fail silently and rotation would be wrong after the next boot | `conhost --headless` (undocumented), VBS wrapper (script host), S4U task (session 0), task → `target\release` | 2026-11-09 |
-| Rust lists the **Xtrfy M42** in `rotation` (aliases `m42`, `xtrfy`) | It has its own RawAccel profile; the Python hid it. Done after parity was shown | Python parity | 2026-11-09 |
+| Swap L/R in the Pulsar's own memory (profile 1) | Works everywhere incl. raw-input games, zero latency, other mice untouched | Windows "Primary mouse button" (swaps all mice) | early |
+| Own tool, no vendor software | User dislikes bloat; the tool runs ~1 s and exits | Pulsar Fusion; Synapse | early |
+| Pulsar ripple off, debounce 1 ms, DPI 3200 single stage | Latency; 1 ms tested chatter-free; matches the Viper's 3200 | 0 ms (bounce) | early |
+| Per-mouse RawAccel profiles via `settings.json` `devices[]` | The driver supports it (`DeviceSetup`); only the GUI lacks it | One shared profile | early |
+| Sign-in task runs the loader once | RawAccel forgets settings on reboot; no resident process | Always-on portal | early |
+| Port to Rust + egui (`px-izgb`) | Smallest footprint; one exe, no Python install | Tauri (WebView2 ~100-200 MB); staying in Python | 2026-11-08 |
+| Python stays the reference until each Rust phase matches byte for byte | Safe migration; test vectors come from the Python | Big-bang rewrite | 2026-11-08 |
+| Windows HID via `windows-sys` directly; `hidapi` only on macOS | `HidApi::new()` enumerates every device (~150 ms) and can't report `FeatureReportByteLength` | `hidapi` everywhere | 2026-11-08 |
+| Repo **public** `github.com/Xyde/hidwright`, MIT | Free Actions incl. macOS runners | Private repo | 2026-11-08/09 |
+| X2A global settings are written with the **active profile byte** (`px-337u`) | Byte 0 changes RAM only (lost on unplug); 1-5 also saves. Verified by replug and by a full reboot | Upstream's 0 | 2026-11-09 |
+| X2A replies must **echo their request** (category, register, profile byte if set, first payload byte if set), Rust and Python | The mouse keeps its last reply until it has processed the next request; early polls read leftovers (shifted button bindings, firmware `03.09.0B.01`). 936 replies + 8 write-ack kinds fit; afterwards 15/15 status runs matched | Status byte only | 2026-11-09 |
+| RawAccel in Rust via `serde_json` + `preserve_order`, output = Python's `json.dumps(indent=2)` + CRLF | A rewrite is byte-identical (checked on the real file) | Hand-written JSON | 2026-11-09 |
+| Rust `startup.log` / `dpi_restore.json` live in the **Python install's folder** (`data_dir()` finds `mouse_startup.py` up to 3 folders above the exe), else next to the exe | The Python portal writes `dpi_restore.json` there; one shared log. Temporary until `px-t5i3` | `%LOCALAPPDATA%` (the Python wouldn't see it) | 2026-11-09 |
+| PATH shim runs `target\release\set-mouse.exe`; `portal` and a missing exe go to the Python (`px-5xrv`) | No install step, no stale copy; a fresh clone without Rust still works | Copy into `bin\` | 2026-11-09 |
+| Sign-in loader = separate **windowed** exe `set-mouse-startup`, task runs a **copy in `bin\`** (`px-yefs`) | No console flashes; a task can't fall back like the shim, so a `cargo clean` must not break sign-in | `conhost --headless`, VBS, S4U task | 2026-11-09 |
+| Viper writes from **OpenRazer's byte layouts** (facts only), each round-trip-tested on the mouse (`px-36ci`) | OpenRazer is the best public source; the mouse confirms | Guessing | 2026-11-09 |
+| **Remove Synapse completely**, incl. its drivers (`px-23l1`) | "Synapse off, drivers kept" broke the Viper (Code 10); the Razer driver `RzDev_0078` sat as a filter in the Viper's input path | Keep Synapse; keep its drivers | 2026-11-09 |
+| Find the button bytes by **USB capture of Razer's own software**, not by decompiling Synapse | Exact bytes for this Viper; decompiling = days of work and a licence problem for a public repo | Ghidra/ReVa on Synapse | 2026-11-09 |
+| Button target: **factory defaults** | User's choice | Right-side buttons disabled; custom | 2026-11-09 |
+| Gemini's uninstall scripts kept on disk but **out of the repo** (`.gitignore`, scrubbed from unpushed history) | They contain this PC's user path; repo is public | Committing them | 2026-11-09 |
+| Rust lists the Xtrfy M42 in `rotation` (`m42`, `xtrfy`) | It has its own RawAccel profile | Python parity | 2026-11-09 |
 
 ### Reversals
 
-- **Was:** "RawAccel has no per-mouse profiles". **Now:** per-mouse profiles via `devices[]`. **Because:** the driver source supports it.
-- **Was:** I recommended **Tauri** for the UI. **Now:** **egui**. **Because:** the user chose the smallest footprint. Traces: none in code.
-- **Was:** HID through the `hidapi` crate on both OSes (and before that, the `windows` crate). **Now:** `windows-sys` on Windows, `hidapi` on macOS. **Because:** start-up cost and missing report-size info (see Decisions). **Stale trace:** the description of ticket `px-0oek` still says "'windows' crate (Microsoft's bindings …)". The notes are correct; trust the code.
-- **Was:** global writes (polling, debounce, toggles) used profile byte 0, as upstream does, and were lost on every power loss (the mouse reloaded an older saved 3 ms / ripple on). **Now:** writes send the active profile byte and are saved. **Because:** `px-337u` experiment 1 (2026-11-09): profile byte 0 = RAM only, 1-5 = saved to flash; reads return the same single copy for any byte.
-- **Was:** first guess that the 2026-11-07 reboot "reset globals to factory". **Now:** see above (not factory; an older saved state).
-- **Was:** the RawAccel path was hard-coded in `rawaccel_cfg.py`. **Now:** `find_dir()` searches `~\Downloads`, `~\Desktop`, `~\Documents` and Program Files for `RawAccel*` (newest first); env `RAWACCEL_DIR` overrides.
-- **Was:** Synapse wasn't mentioned in the old handoff (assumed absent). **Now:** Synapse 4.0.896 is installed (since 2026-04) and running (9 `RazerAppEngine` processes); goal: remove it after a trial.
+- **Was** (old Decisions row): "for the Viper, Synapse only adds spectrum lighting; no remaps". **Now:** Synapse ran the Viper in **driver mode** (`00/04 [03 00]`), handled the buttons on the PC, and animated the logo in software (`0F/03` frames ~25/s). The mouse's **own** memory holds key remaps and a Hypershift DPI button. **Because:** button-table reads + USB capture, 2026-11-09.
+- **Was:** stage 1 of the Synapse trial = app off, drivers kept. **Now:** remove everything. **Because:** the Viper's main interface failed to start (Code 10, `0xC0000120`) without Synapse.
+- **Was:** "Don't add a Viper write without checking it against OpenRazer". **Now:** button writes are **not in OpenRazer**; the accepted sources are razerqdhid's source code + read-back from this Viper (or a capture of Razer's software, `px-fmim`). Every other Viper write still follows OpenRazer.
+- **Was:** "a Synapse capture will give us the button bytes". **Now:** Synapse 4 never sends `02/xx`; Synapse 3 is off Razer's site but mirrored (`px-fmim`); Synapse 2 does not support the Viper.
+- **Was:** Viper stages are 1-based. **Now:** the mouse *reports* 1-based, Razer *writes* 0-based; our 1-based writes also work (`px-j08w`).
+- Older: RawAccel per-mouse profiles exist; Tauri → egui; `hidapi` → `windows-sys` on Windows (stale trace: `px-0oek` description still says "'windows' crate"); X2A globals with profile byte 0 → active profile; RawAccel path auto-detected.
 
 ## Current state
 
-Each item is **verified** (checked 2026-11-09 while writing this; says how) or **reported** (from the session, not re-checked).
+Each item is **verified** (checked 2026-11-09 18:30-19:00; says how) or **reported**.
 
-- Pulsar X2A: profile 1 active, **L/R swapped**, 1000 Hz, **debounce 1 ms**, **ripple off**, angle-snap off, motion-sync off, DPI `[3200]`, lift-off 1 mm (**verified**: `set-mouse` 2026-11-09 after the replug)
-- Pulsar persistence: swap, DPI, debounce 1 ms and ripple off all survived a replug (**verified** 2026-11-09: Windows device arrival 14:15:47, after the write at 14:14:15; then `set-mouse`). Polling, angle-snap and motion-sync use the same write path but weren't replug-tested one by one
-- Pulsar profiles 2-5: never written; factory L/R; profile 2 DPI `400 [800] 1600 3200 6400 12800` (**verified**: Rust vs Python diff for `-p 2` and `-p 5`, 2026-11-08)
-- Razer Viper: firmware v1.04, 1000 Hz, current DPI 3200, stages `400 800 1800 2400 [3200]`, logo brightness 70% (raw 178), logo effect spectrum (as Synapse set it; not readable), device mode **normal** since Synapse's removal (was 03 = driver) (**verified** 2026-11-09: `set-mouse razer`; stages, polling and brightness survived the driver change)
-- Synapse: **uninstalled 2026-11-09** (`px-23l1`; app, services, startup entry, folders, all 6 Razer driver packages gone; the Viper runs on Microsoft drivers only, no Razer filter in its input path) (**verified** read-only). Leftover: driver services `RzCommon`, `RzDev_0078` still registered + `.sys` files, stopped and unreferenced; the user has the commands to delete them
-- Xtrfy M42: plugged in (**verified**: `Get-PnpDevice`); not configurable yet
-- RawAccel: profiles `default` -2.6 (Viper and any unlisted device), `Pulsar X2A` -0.5, `Xtrfy M42` 0.0; `devices[]` has the Pulsar and the M42; 3 backups exist (**verified**: read `settings.json`). Driver service `rawaccel` Running (**verified**: `Win32_SystemDriver`)
-- Sign-in task `Mouse Portal - load RawAccel`: Ready; runs `~\Documents\pulsar-x2a\bin\set-mouse-startup.exe` (switched by the user 2026-11-09); logon trigger, user's own account, "run only when logged on" (Interactive, no stored password). Manual run 2026-11-09 15:31:48 → result 0, `startup.log` line 15:31:49 identical to the Python's (**verified**: `Get-ScheduledTaskInfo`, log). Not yet verified across a real reboot (`px-yefs`). Earlier the Python loader worked after the reboot of 2026-11-07 (`px-p010`)
-- `set-mouse` on PATH = Rust exe via `bin\set-mouse.cmd`; `set-mouse portal --help` reaches the Python portal; with the exe renamed away, the Python answers (**verified** 2026-11-09 from PowerShell and Nushell).
-- Portal: not running (**verified**: nothing listens on 8642). User PATH contains the project's `bin` (**verified**). No interrupted test-DPI run (`dpi_restore.json` absent, **verified**)
-- `rawaccel.exe` GUI retired to `…\RawAccel\_retired-gui` (**reported**, 2026-11-06/08)
-- Calibrator v2 (streamed live view, auto-finish, test-at-DPI and restore) tried with real swipes: "Everything went fine" (**reported**, `px-ha9z` closed)
+- Pulsar X2A: profile 1, **L/R swapped**, 1000 Hz, debounce 1 ms, ripple off, angle-snap off, motion-sync off, DPI `[3200]`, lift-off 1 mm; settings survived a full reboot (**verified**: `set-mouse`, boot 17:34)
+- Razer Viper: firmware v1.04, 1000 Hz, current DPI 3200, stages `400 800 1800 2400 [3200]`, logo 70% brightness, spectrum effect kept without Synapse, device mode **normal** (**verified**: `set-mouse razer`; effect reported by the user)
+- Viper button table (profile 1, normal layer): `01` left, `02` right, `03` middle, **`04` key Enter**, **`05` key Right arrow**, `06` mouse back, **`07` key Left arrow**, **`0e` Hypershift**, `09`/`0a` wheel (**verified**: `02/8C` reads, script `~\AppData\Local\Temp\hidwright-diag\viper_buttons_all.py`). Hypershift layer: `04` back, `05` forward, `06` back, `07` forward. Which physical side is which ID: not yet known
+- Razer software: none. No process, service, driver, `RzCommon.sys`/`RzDev_0078.sys`, driver package or ghost Viper node (**verified**: `Get-Process`, `Win32_Service`, `pnputil /enum-drivers`, `Get-PnpDevice`). Mouse class filters `rawaccel,mouclass`
+- USBPcap 1.5.4.0: installed, idle; USB class upper filter `USBPcap` (**verified**). Decision `px-ut0y`
+- Xtrfy M42: plugged in (**verified**); not configurable yet
+- RawAccel: profiles `default` -2.6 (Viper and unlisted), `Pulsar X2A` -0.5, `Xtrfy M42` 0.0; `devices[]` = Pulsar, M42; 3 backups; driver Running (**verified**: `settings.json`, `Win32_SystemDriver`)
+- Sign-in task `Mouse Portal - load RawAccel`: runs `~\Documents\pulsar-x2a\bin\set-mouse-startup.exe`; after the real reboot it ran 17:34:52, result 0; `startup.log` "17:34:58  RawAccel settings loaded (default: -2.6 deg, Pulsar X2A: -0.5 deg, Xtrfy M42: 0.0 deg)" (**verified**)
+- `set-mouse` on PATH = Rust exe; portal not running; no `dpi_restore.json`; user PATH has the project `bin` (**verified**)
+- Leftovers outside the repo: capture files and scripts in `~\AppData\Local\Temp\hidwright-diag\`; Razer installers in Downloads (`px-c0lr`). Git-ignored in the repo folder: `uninstall_official_razer.cmd`/`.ps1` (another tool's scripts) (**verified**: listing)
 
-Version control: jj, colocated. `main@origin` = `1bec8eda` "CI: Windows + macOS build/test; rustfmt" (pushed by the user). On top, not pushed (2026-11-09): `rqqmnkxv` handoff rewrite (bookmark `main` still points here), `ulsuykkk` Pulsar globals saved, `vqmyvnvu` Rust X2A writes, `zmspwwov` Rust RawAccel + echo check, `xnsopvmr` M42 in rotation, then the working copy (tickets + this handoff). History before the first push was rewritten to remove personal data; every revision was scanned, 0 hits. Tests: `cargo test` → 26 passed (**verified** 2026-11-09). CI run `42679662164`: Rust Windows ✅, Rust macOS ✅, Python ✅ (**verified**: `gh run view`).
+Version control: jj, colocated. `main` = `main@origin` = `umuyrvut` (pushed by the user). Local, not pushed: `rmvxlwpw` (Synapse removed), `lyyzwpwo` (replug result), and the handoff change on top (this file, tickets, `.gitignore`). Unpushed diff scanned: 0 personal-data hits. Tests: `cargo test` → **31 passed**; clippy 0 problems; fmt ok (**verified**). CI on the last push: success (`42701312644`). Exes: `set-mouse.exe` 529,408 bytes, `set-mouse-startup.exe` 331,264 bytes (copy in `bin\` identical size).
 
 ## Specs and reference values
 
 | Thing | Value | Source |
 |---|---|---|
-| Pulsar X2A wired | USB `3710:1404`, config on interface `MI_03` (vendor page), feature report ID 0, 64 bytes (65 with ID) | `pulsar_x2a.py`; `crates/mouse-core/src/x2a.rs` |
-| X2A packet | `[1]` cat, `[2]` reg (bit7 = read), `[3]` sub, `[6]` profile (0 = global, 1-5; **global writes need the active profile here to be saved**, 0 = RAM only), `[7..62]` payload, `[62..64]` LE u16 of `sum(bytes[0..62])` | upstream `packerlschupfer/pulsar-mouse-linux` `src/pulsar_mouse/drivers/x2a.py` (MIT) |
-| X2A reply byte 0 | `0x00` not answered, `0x01` answered, `0x02` pending (OK for writes), `0x03` refused | same |
-| X2A reply echo | Reads: `[1]` cat, `[2]` reg\|0x80, `[3]` sub (DPI read 0x15 comes back as 0x21), `[6]` profile for per-profile reads (data for firmware/active-profile), `[7]` button id for button reads. Write acks echo the whole packet. The buffer keeps the last reply until the next request is processed | measured 2026-11-09 (`answers()` in `x2a.rs` / `X2A.answers`) |
-| X2A commands (cat/reg/sub) | button `04/01/06` `[btn,type,a1,a2]`; polling `01/09/02` (125:1 250:2 500:4 1000:8); debounce `04/03/03`; angle-snap `07/04/02`; ripple `07/03/02`; motion-sync `07/05/02`; DPI write `05/04/21`; DPI read `05/04/15`; active stage `05/01/02`; LOD `07/02/03`; active profile `02/06/01` (profile in byte 6); firmware `01/07/04`; factory reset `02/05/01` (resets that profile **and all globals**) | same |
-| X2A factory globals | 1000 Hz, debounce 3 ms, angle-snap/ripple/motion-sync **off** | upstream comment "Measured on a cabled X2A (2026-10-13)" |
-| Razer Viper wired | USB `1532:0078`; 90-byte feature report (91 with ID); `[0]` status, `[1]` transaction id, `[5]` size, `[6]` class, `[7]` cmd, `[8..88]` args, `[88]` crc = XOR of bytes 2..87. Transaction id: OpenRazer uses `0x3F` for lighting, `0xFF` otherwise; this Viper answers `0x1F`/`0xFF`/`0x3F` alike | OpenRazer `razercommon.h/.c`; `viper.rs` |
-| Razer reads | firmware `00/81`, serial `00/82`, polling `00/85`, device mode `00/84`, DPI `04/85` [NOSTORE], stages `04/86` [VARSTORE] (reply: store, active, count, then 7 bytes per stage, **index 1-based** on this mouse), brightness `0F/84` [VARSTORE, LOGO 0x04] → arg 2 | OpenRazer; measured |
-| Razer writes | stages `04/06` size 0x26 [VARSTORE, active, count, (index, xhi, xlo, yhi, ylo, 0, 0)×n], max 5; polling `00/05` [1000→01, 500→02, 125→08]; brightness `0F/04` [VARSTORE, 0x04, 0-255]; logo effect `0F/02` [VARSTORE, 0x04, effect, …]: off 00 (size 6), static 01 (size 9: `0,0,1,r,g,b`), breathing 02 (random size 6; one colour size 9 `1,0,1,rgb`; two size 0x0C `2,0,2,rgb,rgb`), spectrum 03 (size 6), reactive 05 (size 9 `0,speed 1-4,1,rgb`); device mode `00/04` [00 normal / 03 driver, 0]; temporary DPI `04/05` size 7 [NOSTORE, xhi, xlo, yhi, ylo, 0, 0] (OpenRazer always sends VARSTORE here) | OpenRazer `razerchromacommon.c`, `razermouse_driver.c` |
-| Viper status byte | `0x00` new, `0x01` busy, `0x02` ok, `0x03` failed, `0x04` timeout, `0x05` not supported | `viper.rs` |
-| Viper lighting effects Synapse offers | STATIC, BREATHING, SPECTRUM_CYCLING, REACTIVE, AUDIO_METER, TIDAL; DPI 100-16000 step 50 | Synapse log `connectedDevices` JSON |
-| Xtrfy M42 | USB `2EA8:2203`; `MI_00` mouse (input 8); `MI_01` col01 keyboard, col02 consumer, **col03 vendor page `0xFF00`, 64-byte input + output reports, no feature report** | `HidP_GetCaps` read, 2026-11-08 |
-| Dumang DK6 | USB `0483:5710` ("DuMang KeyBoard DK6"); also exposes a mouse collection `MI_02&Col03` | PnP `BusReportedDeviceDesc` |
-| Dumang layer packet | `BoardSyncPacket`: `[cmd, 0x01, 0x03 active / 0x02 inactive, 0x00, ID, layer_info, layer_info & 0x03, 0x00]`; layer keycodes `0xD0-D3` (switch), `0xD4-D7` (momentary), `0xDC-DF` (long-press) | `mayanez/dumang-keyboard-ctrl` `dumang_ctrl/dumang/common.py` (GPL-3.0: facts only, no code) |
-| RawAccel device ids | Pulsar `HID\VID_3710&PID_1404&MI_00`, Viper `HID\VID_1532&PID_0078&MI_00`, M42 `HID\VID_2EA8&PID_2203&MI_00`, DK6 mouse `HID\VID_0483&PID_5710&MI_02&Col03` (case-sensitive) | `rawinput_monitor` `devices_info()` |
-| RawAccel profile choice | matching `devices[].id` → that `profile`; everything else → `profiles[0]` | `driver/driver.cpp` `DeviceSetup` (RawAccel repo) |
-| Rotation maths | recommended = current rotation − measured θ (Raw Input sees movement *after* RawAccel) | `mouse_portal.html` `calFinish` |
-| Swipe thresholds | turn `max(20, 0.1·dpi)`, min swipe `max(80, 0.4·dpi)` counts | `rawinput_monitor.thresholds` |
+| Pulsar X2A wired | USB `3710:1404`, config interface `MI_03`, feature report 0, 64 bytes | `pulsar_x2a.py`; `crates/mouse-core/src/x2a.rs` |
+| X2A packet | `[1]` cat, `[2]` reg (bit 7 = read), `[3]` sub, `[6]` profile (global **writes** need the active profile, 0 = RAM only), `[7..62]` payload, `[62..64]` LE u16 sum | upstream `packerlschupfer/pulsar-mouse-linux` (MIT) |
+| X2A reply | byte 0: `00` not answered, `01` answered, `02` pending, `03` refused. Echo: `[1]` cat, `[2]` reg, `[6]` profile (per-profile reads), `[7]` button id; write acks echo the packet; DPI read sub `15` answers as `21` | measured; `answers()` |
+| X2A commands | button `04/01/06`; polling `01/09/02` (125:1 250:2 500:4 1000:8); debounce `04/03/03`; angle-snap `07/04/02`; ripple `07/03/02`; motion-sync `07/05/02`; DPI write `05/04/21`, read `05/04/15`; stage `05/01/02`; lift-off `07/02/03`; active profile `02/06/01`; firmware `01/07/04` | upstream |
+| Viper frame | USB `1532:0078`, 90-byte feature report: `[0]` status, `[1]` transaction id, `[5]` size, `[6]` class, `[7]` cmd (bit 7 = get), `[8..88]` args, `[88]` XOR of bytes 2..87. Status `00` new `01` busy `02` ok `03` failed `04` timeout `05` not supported | OpenRazer `razercommon.h/.c` |
+| Viper transaction id | OpenRazer: `0x3F` lighting, `0xFF` other; razerqdhid: `0x1F`; Synapse 4 counts up `0x00..`; this Viper accepts any | measured, capture |
+| Viper OpenRazer commands | stages write `04/06` size `0x26` [store, active, count, (index, x hi, x lo, y hi, y lo, 0, 0)×n], read `04/86`; polling `00/05` [1000→01, 500→02, 125→08]; brightness `0F/04` [01, 04, 0-255], read `0F/84`; logo effect `0F/02` [01, 04, effect…] (off 00, static 01, breathing 02, spectrum 03, reactive 05); device mode `00/04` [00 normal / 03 driver, 00], read `00/84`; temporary DPI `04/05` [00, x, y] | OpenRazer `razerchromacommon.c` |
+| **Viper button table** | list `02/84` → `0a 01 02 03 04 05 06 07 0e 09 0a`; read `02/8C` size `0x0A` args [profile 01, button, layer 00/01]; reply [profile, button, flag, **class, length, value…**]; write `02/0C` same layout. Classes: `00` disabled, `01` mouse (value `01` L, `02` R, `03` M, `04` back, `05` forward, `09`/`0a` wheel), `02` keyboard (modifier, HID key: `28` Enter, `4f` Right, `50` Left), `06` DPI (`06` = next with wrap), `0c` Hypershift. Profile 2 = empty (one slot); profile 0 = "direct" (temporary per razerqdhid) | reads from this Viper; razerqdhid `public/py/qdrazer/device.py`, `protocol.py` (MIT) |
+| Planned button writes | `04` → `01 01 04`, `05` → `01 01 05`, `07` → `01 01 05`, `0e` → `06 01 06`. Undo: `04` `02 02 00 28`, `05` `02 02 00 4f`, `07` `02 02 00 50`, `0e` `0c 01 01` | `px-oqc3` |
+| Synapse 4 capture | 4259 SET_REPORTs, **no `02/xx`**; `00/04 [03 00]`; `0F/02 [00 00 08]` then 4219 × `0F/03` frames; `04/06` with 0-based indexes; `07/01` and `06/8e` → status `05` | USB capture 2026-11-09 |
+| Xtrfy M42 | USB `2EA8:2203`; `MI_01` col03 vendor page `0xFF00`, 64-byte in/out, no feature report | `HidP_GetCaps` |
+| Dumang DK6 | USB `0483:5710`; `BoardSyncPacket` layout in `px-k3jg` | `mayanez/dumang-keyboard-ctrl` (GPL: facts only) |
+| RawAccel device ids | Pulsar `HID\VID_3710&PID_1404&MI_00`, Viper `HID\VID_1532&PID_0078&MI_00`, M42 `HID\VID_2EA8&PID_2203&MI_00` (case-sensitive) | `rawinput.rs` |
+| RawAccel profile choice | matching `devices[].id` → its profile; else `profiles[0]` | RawAccel driver source |
 | Portal | `http://127.0.0.1:8642` | `mouse_portal.py` |
-| Rust release exe | `target\release\set-mouse.exe`, ~500 KB (2026-11-09 with RawAccel; 211 KB with X2A writes only; size decision `px-rwty`); profile `lto`, `codegen-units = 1`, `strip`, `panic = "abort"` | `Cargo.toml` |
-| Toolchain | rustc/cargo 1.99.1, MSVC Build Tools 2022; Python 3.15.2 | `rustc --version`; `vswhere` |
-| `windows-sys` | 0.61 (same version hidapi uses) | `crates/mouse-core/Cargo.toml` |
+| Toolchain | rustc 1.99.1, MSVC Build Tools 2022, Python 3.15.2, `windows-sys` 0.61, `serde_json` 1 | `rustc --version` |
 
 ## How to run and verify
 
-Nushell and PowerShell take these as written, from the project folder (`~\Documents\pulsar-x2a`):
+Nushell or PowerShell, from `~\Documents\pulsar-x2a`:
 
 ```
 set-mouse
-set-mouse help
-set-mouse portal
+set-mouse razer
 set-mouse rotation
-python set_mouse.py razer
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 cargo build --release
-target\release\set-mouse.exe
-target\release\set-mouse.exe info -p 2
-target\release\set-mouse.exe razer
 jj st
-jj log
 tk ready
-tk blocked
 gh run list --repo Xyde/hidwright --limit 3
 ```
 
-Parity check, Rust against Python (Git Bash; only line endings differ):
+Read the Viper's button table (read-only; the script lives outside the repo and may be gone, rebuild it from the "Viper button table" spec if so):
 
 ```
-python pulsar_x2a.py info > py.txt; target/release/set-mouse.exe info > rs.txt; diff --strip-trailing-cr py.txt rs.txt && echo identical
+python ~\AppData\Local\Temp\hidwright-diag\viper_buttons_all.py
 ```
 
-**How the Rust tests' reference vectors were made** (repeat this for the phase 2 write commands): a throwaway Python script imports the module, calls the packet builder (`pulsar_x2a.X2A.build`, `describe`) and prints hex. For the Viper, it replaces `razer_viper.hid` with a fake object whose `HidD_SetFeature` records the sent bytes and whose `HidD_GetFeature` returns a canned reply. That captures request bytes *and* parsing without touching a device. For the X2A writes (2026-11-09), the script made an `X2A` with `object.__new__` (no device), set `set_report` to append to a list, `get_report` to return `0x02` + zeros, and pinned `active_profile` to **3** so a global write sent with 0 or 1 fails the test. Paste the output into a `#[test]`. Keep such scripts in the scratchpad, not in the repo.
+Sign-in task (PowerShell): `Get-ScheduledTaskInfo -TaskName "Mouse Portal - load RawAccel"`.
 
-Sign-in task (PowerShell): `Get-ScheduledTaskInfo -TaskName "Mouse Portal - load RawAccel"`; log: `Get-Content ~\Documents\pulsar-x2a\startup.log`.
+Test vectors: a throwaway Python script calls the Python packet builders and prints hex (scratchpad, never the repo). Device-side tests: same-value write first, then a real change, read back, restore.
 
 ## Environment and gotchas
 
-- **This repo is public.** Never write the Windows user name, PC name, email, or device serials into tracked files or commit messages. Use `~\…`. Synapse's logs and the scratchpad contain such data; don't paste them in.
-- **Claude Code's auto-mode classifier blocks** creating public surfaces (`gh repo create --public`, and `jj git push` to this public repo), changing scheduled tasks ("Unauthorized Persistence"), and stopping processes matched by command line. The user runs those; give them the exact commands (Nushell first). Pushing always needs the user's explicit yes anyway.
-- **Razer's driver filters the Viper's input** (found 2026-11-09): `RzDev_0078` is an upper filter on the Viper's mouse device (`HID\VID_1532&PID_0078&MI_00`) and keyboard part, a lower filter on `USB\…MI_01`. Removing Synapse must remove it **properly** (Razer uninstaller or `pnputil /delete-driver … /uninstall`), then check the Viper nodes' Upper/LowerFilters. Never delete `RzDev_0078.sys` by hand while it's still listed (Code 39). Details in `px-23l1`.
-- **The task has no run-as password, on purpose.** The user's account has no password; the task is "run only when the user is logged on", which needs none. `schtasks /Change` asks for one anyway: leave it empty. Never switch the task to "run whether logged on or not" (that needs a stored password).
-- **This Bash tool eats backslashes in inline commands** (`sed 's/$/\r/'` appended a literal `r`; `$'\r'` became `r`; `\\u00fc` in a heredoc became `ü`). For anything with backslashes, write a script file in the scratchpad (Python) and run it.
-- **jj: pushed commits are immutable.** After a push, jj starts a new empty change on top. Don't rewrite `main@origin` history.
-- **jj abandons an empty, undescribed working-copy change when you `jj edit` another revision.** Its change id then no longer exists. Use `jj new <tip>` to come back.
-- **Old revisions don't ignore `target/`.** `.gitignore` gained `target/` only in the Rust commit. Checking out an older revision makes jj snapshot build files into it. Before `jj edit` on an old revision, move `target` out of the repo (`mv target ../_hidwright_target_parked`), and move it back only after `jj new <tip>`.
-- **Synapse collisions:** the Python Viper reader fails a field in ~27% of runs while Synapse runs (seen again today). Rust resends. Don't "fix" this by stopping Synapse silently; that's the user's trial (`px-23l1`).
-- **hidapi on Windows enumerates every device on `HidApi::new()`** (~150 ms); `new_without_enumerate()` doesn't help there and is deprecated. That's why Windows uses `crates/mouse-core/src/hid/windows.rs`.
-- **`link.exe` on PATH is Git's coreutils `link`**, not MSVC's. Harmless: rustc finds MSVC through the Visual Studio installation.
-- **Shells:** commands for the user go in Nushell first, then PowerShell (not bash). On the Mac the user uses **fish**.
-- **Python prints CRLF on Windows, Rust prints LF.** Use `diff --strip-trailing-cr` for parity checks.
-- **Testing RawAccel writes without touching the driver:** copy `settings.json` into a scratch folder with a fake `writer.exe` (a 10-line Rust program that logs its arguments and exits with `FAKE_WRITER_EXIT`), and point `RAWACCEL_DIR` at it. Both versions honour `RAWACCEL_DIR`.
-- **`set-mouse` in Git Bash** isn't found (`.cmd` shims aren't run there); use Nushell/PowerShell, or `target/release/set-mouse.exe` / `python set_mouse.py`.
-- **Shell quoting:** inline `python -c` with Windows paths or backslashes broke twice. Put scripts in a file (scratchpad) instead.
-- **`tk` has no assign command:** change `assignee:` in `.tickets/<id>.md` directly. `tk.cmd` goes through cmd.exe; for long text use `bash ~/bin/ticket/ticket` from Git Bash.
-- From the old handoff, still true: RawAccel forgets settings on reboot (the sign-in task reloads them); Raw Input sees movement after RawAccel; the retired GUI can't run from `_retired-gui`; `set-mouse.cmd` + Ctrl+C asks "Terminate batch job"; only one portal at a time; `python -I` breaks sibling imports; `.gitignore` comments must be on their own line; the Claude app is packaged, so `%APPDATA%` writes from it can be redirected (check from outside).
-- The handoff checker flags `/api/calib/stream` (an HTTP route) and upstream repo paths (`driver/driver.cpp`, `src/pulsar_mouse/drivers/x2a.py`, `dumang_ctrl/dumang/common.py`); those aren't files in this repo.
+- **Public repo.** No user name, PC name, email or serials in tracked files or commit messages. Other tools (Gemini) and other Claude sessions also write into this folder; jj snapshots **every new file**, so check `jj st` and scan `jj diff --from main@origin --to @ --git` before describing or pushing.
+- **The Viper's side buttons type keys** (Enter, arrows). Before the user presses a Viper button, have them click into **Notepad with the Pulsar**. One press once disrupted the Claude window.
+- **Claude Code's classifier blocks** `jj git push` to this public repo, changing scheduled tasks, and stopping processes by command line. The user runs those; give exact commands.
+- **USBPcap:** opening `\\.\USBPcapN` needs admin, so the user starts captures (admin PowerShell `Start-Process … USBPcapCMD.exe -d \\.\USBPcapN -o … -A`); add `--inject-descriptors` to get VID/PID in the file; files are locked while capturing; stop with `Stop-Process -Name USBPcapCMD`. Without descriptors, find the Viper by its 90-byte control transfers (`wLength = 0x5a`). Capture files contain the mouse serial.
+- **Razer leftovers:** driver files owned by TrustedInstaller need `takeown /f <file> /a` + `icacls <file> /grant Administrators:F` before deleting. Ghost device entries (devices not connected now) are missed by "present only" checks; list with `Get-PnpDevice` and `-not $_.Present`, remove with `pnputil /remove-device`.
+- **The task has no run-as password, on purpose** (the account has none; "run only when logged on"). `schtasks /Change` asks anyway: leave it empty.
+- **This Bash tool eats backslashes** in inline commands (`\r` → `r`, `\\b` → backspace). Write Python scripts to a file for anything with backslashes.
+- **Windows PowerShell 5.1 strips inner double quotes** passed to native programs (`nu -c '…"…"…'` broke); use a script file.
+- **The scratchpad folder changes when a session restarts**; long-lived diagnostics are in `~\AppData\Local\Temp\hidwright-diag\`.
+- **Testing RawAccel writes without touching the driver:** copy `settings.json` into a scratch folder with a fake `writer.exe` (a tiny Rust program that logs its arguments and exits with `FAKE_WRITER_EXIT`) and point `RAWACCEL_DIR` at it. Both versions honour `RAWACCEL_DIR`.
+- **CI's Windows runner checks text files out with CRLF.** Tests that compare files must normalise line ends (the RawAccel fixture tests do; CI run `42692951681` failed before that).
+- jj: pushed commits are immutable; an empty undescribed change is abandoned on `jj edit`; old revisions don't ignore `target/` (park it before `jj edit`).
+- `set-mouse` isn't found in Git Bash (`.cmd` shim); use `target/release/set-mouse.exe`.
+- Python prints CRLF, Rust LF (`diff --strip-trailing-cr`).
+- `tk` has no assign command (edit `assignee:`); for long text use `bash ~/bin/ticket/ticket`.
+- Still true from before: RawAccel forgets settings on reboot; Raw Input sees movement after RawAccel; `set-mouse.cmd` + Ctrl+C asks "Terminate batch job"; one portal at a time; `python -I` breaks sibling imports.
+- The handoff checker flags upstream paths and the `\\.\USBPcapN` device names; those aren't repo files.
 
 ## Open threads
 
 | Thread | Ticket | Owner | Blocked on |
 |---|---|---|---|
+| Decide: Synapse 3 capture or direct button writes | `px-fmim` | user | user decision |
+| Fix the Viper's on-board buttons (factory defaults) + `set-mouse razer bind` | `px-oqc3` | agent | `px-fmim` |
+| Viper stage indexes 0-based like Razer | `px-j08w` | agent | nothing |
+| Keep or remove USBPcap | `px-ut0y` | user | user decision |
+| Clean up capture files (serial) and installers | `px-c0lr` | user | nothing |
+| Push the local changes | `px-cfcv` | user | user's go |
+| Viper full control: replug proof of temporary DPI, device-mode command, portal UI | `px-w1a0` | agent | `px-oqc3`, `px-01cy` |
 | Rust port (epic) | `px-0oek` | agent | — |
-| Viper full control: done except replug persistence, device mode reset, portal UI (see notes) | `px-w1a0` | agent | `px-23l1` trial, `px-01cy` |
-| Rust 4: sign-in loader in Rust | `px-yefs` | agent | `px-5xrv` |
-| Rust 5: egui portal | `px-01cy` | agent | `px-5xrv`, `px-36ci` |
+| Rust 5: egui portal | `px-01cy` | agent | nothing (deps closed) |
 | Rust 6: egui calibrator | `px-xpnz` | agent | `px-01cy` |
-| Rust 7: retire the Python | `px-t5i3` | agent | `px-yefs`, `px-xpnz` |
-| Replace Synapse: trial without it, then uninstall (incl. `PID0078Drv`, `RzComDriver`) | `px-23l1` | user (agent gives commands) | user's go |
-| macOS: build + test on the Mac Studio (CI compile already green) | `px-e6p0` | agent, on the Mac | a session on the Mac |
-| Rotation on macOS / engine integration for the user's own game | `px-sk2o` | user decides | user decision |
-| Dumang DK6: layer toggle from a mouse button | `px-k3jg` | agent | test on the real DK6 |
-| Xtrfy M42: find the original software, maybe capture its protocol | `px-8mzp` | agent | finding the software; user OK to run it |
-| Give the Viper its own RawAccel profile, `default` → 0° | `px-xtv5` | user decides | user decision |
-| Swap L/R on Pulsar profiles 2-5 too? | `px-tkar` | user decides | user decision |
-| Re-run the calibrator once on the Pulsar, expect about 0° | `px-vtbh` | user | nothing |
-| Acceleration/sensitivity editing? | `px-xykv` | user decides | user decision |
-| Verify X2A lift-off encoding before using `lod` | `px-zd1z` | agent | nothing; low priority |
-| Calibrate the M42's own rotation | no ticket (mentioned in `px-8mzp`) | user | nothing |
-| Python `set-mouse rotation` doesn't list the M42 (unnamed mice are filtered out) | fixed in the Rust version (2026-11-09); the Python stays as is | — | — |
-| Rust exe size 500 KB: keep, or `opt-level = "z"` (410 KB)? | `px-rwty` | user decides | user decision |
+| Rust 7: retire the Python | `px-t5i3` | agent | `px-xpnz` |
+| macOS build + test on the Mac Studio | `px-e6p0` | agent, on the Mac | a Mac session |
+| Rotation on macOS / own game engine | `px-sk2o` | user | user decision |
+| Dumang DK6 layer toggle from a mouse button | `px-k3jg` | agent | test on the real DK6 |
+| Xtrfy M42: software / protocol | `px-8mzp` | agent | finding the software |
+| Viper own RawAccel profile, `default` → 0° | `px-xtv5` | user | user decision |
+| Swap L/R on Pulsar profiles 2-5? | `px-tkar` | user | user decision |
+| Re-run calibrator on the Pulsar (expect ~0°) | `px-vtbh` | user | nothing |
+| Acceleration/sensitivity editing? | `px-xykv` | user | user decision |
+| Exe size 529 KB vs `opt-level = "z"` | `px-rwty` | user | user decision |
+| X2A lift-off encoding | `px-zd1z` | agent | low priority |
 
 ## Unknowns and unverified
 
-- **When the X2A answers late** (the leftover-reply problem): seen in bursts on 2026-11-09 (~14:44-14:50 and again later), never in 400 idle back-to-back reads. Guess, untested: slower while the mouse is moved or clicked. The echo check handles it either way; to test, run a read loop while moving the mouse.
-- **Viper without Synapse:** does the logo keep spectrum cycling (Razer's factory default) and at what brightness? Check with the `px-23l1` trial.
-- **Viper NOSTORE temporary DPI:** is it really forgotten on replug? OpenRazer never sends NOSTORE for a DPI set. Test in the `px-23l1` trial (Synapse may re-apply its profile on reconnect, so not before).
-- **macOS with real mice:** does macOS report interface numbers? Can we send feature reports to the Viper's mouse interface without exclusive access? (`px-e6p0`)
-- **Dumang:** one USB device shows up; what the board `ID` and `layer_info` mean on a DK6; momentary vs latched behaviour (`px-k3jg`).
-- **M42 protocol:** unknown; no public work found.
-- **X2A lift-off encoding** (`px-zd1z`); whether the RawAccel GUI would keep `devices[]` on save (GUI retired, not tested).
+- **Does a `02/0C` write to profile 1 persist in the Viper?** Expected (profile 1 is the on-board slot; razerqdhid treats profile 0 as temporary). Check: write, unplug 5 s, read back.
+- **Which physical side button is `04`/`05`/`06`/`07`.** The user reported that only left-side buttons misbehave, but `07` (Left arrow) and `06` (back) suggest one of each per side. The Notepad test will show it.
+- **Does Synapse 3 write the Viper's on-board buttons?** Unknown until captured (`px-fmim`). Is the mirror's device ID 120 really USB `1532:0078`? Unconfirmed.
+- **Viper temporary DPI (NOSTORE) forgotten on replug?** Not proven (`px-w1a0`).
+- Synapse commands seen but not understood: `0b/03 [00 04 00]`, `00/b3`, `00/87 [01 04 …]`, `0F/80 [04 19 01 01 01]`.
+- When the X2A answers late (leftover replies): bursts seen, cause untested; the echo check handles it.
+- macOS with real mice (`px-e6p0`); Dumang ID/layer meaning (`px-k3jg`); M42 protocol (`px-8mzp`); X2A lift-off encoding (`px-zd1z`).
 
 ## Don't
 
-- Don't put personal data in the repo (public). Don't push without the user's explicit yes, and don't rewrite pushed history.
-- Don't use Windows' "Primary mouse button" swap (it swaps every mouse).
-- Don't install or recommend Pulsar Fusion or Synapse as the solution. The *only* considered exception is a temporary Fusion install for a USB capture, and only with the user's OK. Never use Fusion's "reset to defaults".
-- Don't uninstall Synapse or its drivers before the user's trial (`px-23l1`). Don't uninstall the RawAccel driver or delete `writer.exe`, `wrapper.dll`, `Newtonsoft.Json.dll`. Don't delete `_retired-gui`.
-- Don't add a Viper write without checking it against OpenRazer's source first (every current one is, see Specs). Don't set device mode 02 (OpenRazer blocks it).
-- Don't copy code from `dumang-keyboard-ctrl` (GPL-3.0); reimplement from the packet format.
-- Don't switch the sign-in task to Rust before `px-yefs` is verified; don't send `portal` to the Rust exe before `px-01cy`; don't delete the Python before `px-t5i3` (it's also the shim's fallback).
-- Don't hand-edit `settings.json` `profiles[0]` thinking it's the Pulsar's (it's `default`). Use `set-mouse rotation` or `rawaccel_cfg.apply` (they back up first).
-- Don't set debounce 0 ms; don't promise per-DPI rotation (one rotation per profile); don't start a second portal; don't use `python -I` on modules that import siblings.
-- Don't run git commands (jj only). Don't use `HidApi::new()` in the Windows code path.
+- Don't put personal data in the repo; don't push without the user's explicit yes; don't rewrite pushed history. Never commit the capture files or `uninstall_official_razer.*`.
+- Don't let the user press Viper side buttons while a terminal or chat window has focus.
+- Don't write a Viper button without its original bytes at hand (`px-oqc3`), and don't use profile 0 for lasting changes. Don't run razerqdhid's flash reset (`06/0A`): effects on the Viper are unknown.
+- Don't reinstall Synapse 4 hoping it fixes the buttons: it never writes them, and it brings its drivers and filters back. Any temporary Razer install must be removed the careful way afterwards (ghost nodes, services, `.sys`).
+- Don't leave Razer drivers installed without Synapse (Viper fails with Code 10). Don't delete a filter driver's `.sys` while a device still lists it (Code 39).
+- Don't use Windows' "Primary mouse button" swap. Don't install Pulsar Fusion except, with the user's OK, briefly for a capture.
+- Don't copy code from `dumang-keyboard-ctrl` (GPL-3.0). Don't set Viper device mode `02`.
+- Don't send `portal` to the Rust exe before `px-01cy`; don't delete the Python before `px-t5i3` (also the shim's fallback). Don't uninstall the RawAccel driver or delete `writer.exe`, `wrapper.dll`, `Newtonsoft.Json.dll`, `_retired-gui`.
+- Don't hand-edit `settings.json` `profiles[0]` thinking it's the Pulsar's (it's `default`); use `set-mouse rotation`.
+- Don't set debounce 0 ms; don't promise per-DPI rotation; don't start a second portal. Don't run git commands; don't use `HidApi::new()` on Windows.
 
 ## Where things live
 
-- `README.md`: public, beginner-friendly usage. `LICENSE`: MIT.
-- `CLAUDE.md`: short orientation; points here.
-- `Cargo.toml`: workspace (`crates/mouse-core`, `crates/set-mouse`), release profile.
-- `crates/mouse-core/src/hid/`: `mod.rs` (shared `Interface`, report-ID helper), `windows.rs` (SetupAPI + hid.dll), `macos.rs` (hidapi).
-- `crates/mouse-core/src/x2a.rs`: Pulsar reads (`Snapshot`) and writes (`Setting` enum + `X2a::write`, which picks the profile byte: active profile for globals), `Binding::parse`, tests vs Python vectors.
-- `crates/mouse-core/src/viper.rs`: Viper reads, writes (`Setting`, `Logo`, `Rgb`), temporary DPI (NOSTORE), collision retry; tests vs Python vectors, OpenRazer layouts and bytes measured on the mouse.
-- `crates/mouse-core/src/rawaccel.rs`: RawAccel `settings.json` (find, resolve, plan, apply, `writer.exe`, reload). Test fixtures in `crates/mouse-core/tests/fixtures/rawaccel/` (made by `rawaccel_cfg.plan`).
-- `crates/mouse-core/src/rawinput.rs`: plugged-in mice under RawAccel's ids. `dpi_restore.rs`: undo an interrupted calibration.
-- `crates/set-mouse/src/main.rs`: Rust CLI: everything `set-mouse help` lists except `portal`. Input is checked before the mouse is opened; `say!` instead of `println!` (no panic when piped into `head`).
-- `.github/workflows/ci.yml`: CI (Windows + macOS Rust, Python compile).
-- `crates/set-mouse/src/bin/set-mouse-startup.rs`: the sign-in loader (windowed, prints nothing, logs one line). `crates/set-mouse/src/shared.rs`: `data_dir()` and the `startup.log` writer, used by both binaries.
-- `bin/set-mouse-startup.exe`: git-ignored copy for the scheduled task. Refresh after changing the loader: `cp target/release/set-mouse-startup.exe bin/`.
-- `task-backup-python.local.xml`: git-ignored export of the task as it was (Python), for rollback.
-- `bin/set-mouse.cmd` (PATH shim): `portal` → Python; everything else → `target\release\set-mouse.exe` if built, else Python. After `cargo clean`, `set-mouse` quietly becomes the Python until the next `cargo build --release`.
-- Python (portal, sign-in loader, shim fallback): `set_mouse.py` (dispatcher), `pulsar_x2a.py`, `razer_viper.py`, `rawinput_monitor.py`, `rawaccel_cfg.py`, `test_dpi.py`, `mouse_portal.py` + `mouse_portal.html`, `mouse_startup.py` (sign-in loader → `startup.log`).
-- `.tickets/`: `tk` tickets. `.claude/launch.json`: browser-pane preview config.
-- Outside the repo: RawAccel in `~\Downloads\RawAccel_v1.7.1\RawAccel\` (`settings.json`, backups, `writer.exe`, `_retired-gui\`); Claude memory in `~\.claude\projects\<this project's folder>\memory\`.
+- `README.md` (public usage), `LICENSE` (MIT), `CLAUDE.md` (orientation; points here), `Cargo.toml` (workspace, release profile).
+- `crates/mouse-core/src/`: `hid/` (Windows + macOS HID), `x2a.rs` (Pulsar reads/writes, echo check), `viper.rs` (Viper reads/writes, `Setting`, `Logo`, `Rgb`), `rawaccel.rs`, `rawinput.rs`, `dpi_restore.rs`, `lib.rs`. Fixtures: `crates/mouse-core/tests/fixtures/rawaccel/`.
+- `crates/set-mouse/src/main.rs` (CLI; checks input before opening a mouse; prints with `say!`, which exits quietly when piped into `head` instead of panicking), `crates/set-mouse/src/bin/set-mouse-startup.rs` (sign-in loader), `crates/set-mouse/src/shared.rs` (`data_dir()`, log writer).
+- `bin/set-mouse.cmd` (PATH shim); `bin/set-mouse-startup.exe` (git-ignored copy for the task; refresh: `cp target/release/set-mouse-startup.exe bin/`).
+- `task-backup-python.local.xml` (git-ignored: the task as it was, for rollback); `uninstall_official_razer.cmd`/`.ps1` (git-ignored, another tool's scripts).
+- Python (portal, fallback): `set_mouse.py`, `pulsar_x2a.py`, `razer_viper.py`, `rawinput_monitor.py`, `rawaccel_cfg.py`, `test_dpi.py`, `mouse_portal.py` + `mouse_portal.html`, `mouse_startup.py` (old loader, kept for rollback).
+- `.tickets/` (`tk`), `.github/workflows/ci.yml` (CI).
+- Outside the repo: RawAccel in `~\Downloads\RawAccel_v1.7.1\RawAccel\`; diagnostics and captures in `~\AppData\Local\Temp\hidwright-diag\` (`viper_listen.py` Raw Input listener, `viper_buttons_all.py` button reader, `usbpcap_read.py` USBPcap file reader without Wireshark, `viper_cmds.py` decodes the Viper's commands from `usbcap\hub2.pcap`; Windows may clean `Temp`, so rebuild from the specs if gone); Claude memory in `~\.claude\projects\<this project's folder>\memory\`.

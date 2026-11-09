@@ -30,3 +30,7 @@ User 2026-11-08: 'as thorough as possible'. Cover what Synapse offers for the Vi
 - Current effect can't be read (no getter in OpenRazer); the portal must remember what it set.
 - Software effects (audio meter, tidal), idle-off, firmware updates: Synapse-only, not hardware; skipped unless the user wants a resident process.
 - Portal UI for all of it: px-01cy.
+
+**2026-11-09T23:19:27Z**
+
+2026-11-09: replug test passed without Synapse (brightness 60% kept; restored to 70%). The logo keeps cycling colours without Synapse (on-board spectrum effect). Still unproven: NOSTORE temporary DPI forgotten on replug (the run that should test it found the temporary DPI already reset). Device mode: set to normal 00/04 [00 00] after Synapse; add a 'set-mouse razer mode' command if it ever drifts. Button table fix: px-oqc3.

@@ -13,3 +13,5 @@ target/
 bin/*.exe
 # local backups that name this PC/user (e.g. the scheduled task before px-yefs)
 *.local.xml
+# local helper scripts that contain this PC's paths (written by another tool, kept out of the public repo)
+uninstall_official_razer.*
