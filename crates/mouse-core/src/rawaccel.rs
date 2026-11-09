@@ -473,8 +473,10 @@ mod tests {
     const P: &str = r"HID\VID_3710&PID_1404&MI_00";
     const R: &str = r"HID\VID_1532&PID_0078&MI_00";
 
-    fn fixture(name: &str) -> &'static str {
-        match name {
+    /// A fixture with LF line ends, whatever the checkout did to them (git on CI's Windows
+    /// runner converts text files to CRLF).
+    fn fixture(name: &str) -> String {
+        let text = match name {
             "cfg" => include_str!("../tests/fixtures/rawaccel/cfg.json"),
             "same_value" => include_str!("../tests/fixtures/rawaccel/same_value.json"),
             "change_existing" => include_str!("../tests/fixtures/rawaccel/change_existing.json"),
@@ -482,11 +484,12 @@ mod tests {
             "rounding" => include_str!("../tests/fixtures/rawaccel/rounding.json"),
             "two_at_once" => include_str!("../tests/fixtures/rawaccel/two_at_once.json"),
             _ => unreachable!(),
-        }
+        };
+        text.replace("\r\n", "\n")
     }
 
     fn cfg() -> Value {
-        serde_json::from_str(fixture("cfg")).unwrap()
+        serde_json::from_str(&fixture("cfg")).unwrap()
     }
 
     fn ch(id: &str, name: &str, rotation: f64) -> Change {
