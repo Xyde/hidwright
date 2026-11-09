@@ -23,3 +23,11 @@ User 2026-11-08: 'A private repo would be nice, but I don't mind a public one ei
 **2026-11-08T23:49:10Z**
 
 Name chosen by the agent (user delegated, 2026-11-08): hidwright (HID + wright, a maker). Available on github.com/Xyde. Still waiting for the user's explicit go and public/private.
+
+**2026-11-09T00:08:06Z**
+
+2026-11-08, user: 'go with what you'd like! And OF COURSE we should scrub our names', placeholders anyone can use. Done: history rewritten with jj before any push. User folder paths → ~\... in HANDOFF.md; rawaccel_cfg.py now searches ~\Downloads|Desktop|Documents and Program Files for RawAccel* (RAWACCEL_DIR still overrides); PC name → <PC-NAME>; Claude package id → Claude_*. Every revision and message scanned: 0 hits. Added README.md (beginner steps) and LICENSE (MIT). Public repo chosen (free Actions incl. macOS runners).
+
+**2026-11-09T00:08:41Z**
+
+Push blocked 2026-11-08 by Claude Code's auto-mode classifier ('Create Public Surface'). Ready: bookmark main at the README/licence change, history scrubbed. User runs: gh repo create Xyde/hidwright --public --description ...; jj git remote add origin https://github.com/Xyde/hidwright.git; jj git push --bookmark main. After that, the agent can add CI (GitHub Actions: Windows + macOS build/test).
