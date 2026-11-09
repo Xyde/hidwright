@@ -8,9 +8,9 @@ use std::mem::{size_of, zeroed};
 use std::ptr::{null, null_mut};
 
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
-    DIGCF_DEVICEINTERFACE, DIGCF_PRESENT, SP_DEVICE_INTERFACE_DATA, SP_DEVICE_INTERFACE_DETAIL_DATA_W,
-    SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInterfaces, SetupDiGetClassDevsW,
-    SetupDiGetDeviceInterfaceDetailW,
+    DIGCF_DEVICEINTERFACE, DIGCF_PRESENT, SP_DEVICE_INTERFACE_DATA,
+    SP_DEVICE_INTERFACE_DETAIL_DATA_W, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInterfaces,
+    SetupDiGetClassDevsW, SetupDiGetDeviceInterfaceDetailW,
 };
 use windows_sys::Win32::Devices::HumanInterfaceDevice::{
     HIDP_CAPS, HIDP_STATUS_SUCCESS, HidD_FreePreparsedData, HidD_GetFeature, HidD_GetHidGuid,
@@ -37,7 +37,12 @@ fn hid_paths() -> Vec<String> {
     unsafe {
         let mut guid: GUID = zeroed();
         HidD_GetHidGuid(&mut guid);
-        let set = SetupDiGetClassDevsW(&guid, null(), null_mut(), DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+        let set = SetupDiGetClassDevsW(
+            &guid,
+            null(),
+            null_mut(),
+            DIGCF_PRESENT | DIGCF_DEVICEINTERFACE,
+        );
         if set == -1 {
             return paths;
         }
@@ -56,14 +61,18 @@ fn hid_paths() -> Vec<String> {
             let detail = buf.as_mut_ptr() as *mut SP_DEVICE_INTERFACE_DETAIL_DATA_W;
             // The struct's size (not the buffer's): 8 on 64-bit, 6 on 32-bit.
             (*detail).cbSize = size_of::<SP_DEVICE_INTERFACE_DETAIL_DATA_W>() as u32;
-            if SetupDiGetDeviceInterfaceDetailW(set, &ifd, detail, need, null_mut(), null_mut()) == 0 {
+            if SetupDiGetDeviceInterfaceDetailW(set, &ifd, detail, need, null_mut(), null_mut())
+                == 0
+            {
                 continue;
             }
             // DevicePath starts after the 4-byte cbSize and is NUL-terminated UTF-16.
             let chars = (*detail).DevicePath.as_ptr();
             let max = (need as usize - 4) / 2;
             let len = (0..max).find(|&i| *chars.add(i) == 0).unwrap_or(max);
-            paths.push(String::from_utf16_lossy(std::slice::from_raw_parts(chars, len)));
+            paths.push(String::from_utf16_lossy(std::slice::from_raw_parts(
+                chars, len,
+            )));
         }
         SetupDiDestroyDeviceInfoList(set);
     }
@@ -151,13 +160,18 @@ impl Device {
         unsafe {
             let mut pp = 0;
             if !HidD_GetPreparsedData(self.handle, &mut pp) {
-                return Err(Error::Hid(format!("HidD_GetPreparsedData failed (Windows error {})", last_error())));
+                return Err(Error::Hid(format!(
+                    "HidD_GetPreparsedData failed (Windows error {})",
+                    last_error()
+                )));
             }
             let mut caps: HIDP_CAPS = zeroed();
             let status = HidP_GetCaps(pp, &mut caps);
             HidD_FreePreparsedData(pp);
             if status != HIDP_STATUS_SUCCESS {
-                return Err(Error::Hid(format!("HidP_GetCaps failed (status 0x{status:08x})")));
+                return Err(Error::Hid(format!(
+                    "HidP_GetCaps failed (status 0x{status:08x})"
+                )));
             }
             Ok(caps.FeatureReportByteLength as usize)
         }
@@ -167,17 +181,35 @@ impl Device {
     pub fn set_feature(&self, data: &[u8]) -> Result<()> {
         let buf = with_report_id(data, self.report_len);
         // SAFETY: `buf` is report_len + 1 bytes, the length we pass.
-        let ok = unsafe { HidD_SetFeature(self.handle, buf.as_ptr() as *const c_void, buf.len() as u32) };
-        if ok { Ok(()) } else { Err(Error::Hid(format!("SetFeature failed (Windows error {})", last_error()))) }
+        let ok = unsafe {
+            HidD_SetFeature(self.handle, buf.as_ptr() as *const c_void, buf.len() as u32)
+        };
+        if ok {
+            Ok(())
+        } else {
+            Err(Error::Hid(format!(
+                "SetFeature failed (Windows error {})",
+                last_error()
+            )))
+        }
     }
 
     /// Fetch one feature report (without the report-ID byte).
     pub fn get_feature(&self) -> Result<Vec<u8>> {
         let mut buf = vec![0u8; self.report_len + 1];
         // SAFETY: `buf` is report_len + 1 bytes, the length we pass; byte 0 is the report ID (0).
-        let ok = unsafe { HidD_GetFeature(self.handle, buf.as_mut_ptr() as *mut c_void, buf.len() as u32) };
+        let ok = unsafe {
+            HidD_GetFeature(
+                self.handle,
+                buf.as_mut_ptr() as *mut c_void,
+                buf.len() as u32,
+            )
+        };
         if !ok {
-            return Err(Error::Hid(format!("GetFeature failed (Windows error {})", last_error())));
+            return Err(Error::Hid(format!(
+                "GetFeature failed (Windows error {})",
+                last_error()
+            )));
         }
         buf.remove(0);
         Ok(buf)
@@ -197,8 +229,17 @@ mod tests {
 
     #[test]
     fn interface_number_from_path() {
-        assert_eq!(interface_number(r"\\?\hid#vid_3710&pid_1404&mi_03#a&200beea6&0&0000#{4d1e}"), 3);
-        assert_eq!(interface_number(r"\\?\hid#vid_1532&pid_0078&mi_01&col03#8&d5e9#{4d1e}"), 1);
-        assert_eq!(interface_number(r"\\?\hid#vid_046d&pid_c077#7&1f4f#{4d1e}"), -1);
+        assert_eq!(
+            interface_number(r"\\?\hid#vid_3710&pid_1404&mi_03#a&200beea6&0&0000#{4d1e}"),
+            3
+        );
+        assert_eq!(
+            interface_number(r"\\?\hid#vid_1532&pid_0078&mi_01&col03#8&d5e9#{4d1e}"),
+            1
+        );
+        assert_eq!(
+            interface_number(r"\\?\hid#vid_046d&pid_c077#7&1f4f#{4d1e}"),
+            -1
+        );
     }
 }

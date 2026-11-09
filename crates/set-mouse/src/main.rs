@@ -82,23 +82,41 @@ fn razer_info() -> Result<(), String> {
 /// Same layout as `python razer_viper.py`, line for line.
 fn format_razer(s: &viper::Info) -> String {
     let none = || "None".to_string();
-    let mut out = format!("Razer Viper   firmware {}\n", s.firmware.clone().unwrap_or_else(none));
+    let mut out = format!(
+        "Razer Viper   firmware {}\n",
+        s.firmware.clone().unwrap_or_else(none)
+    );
     let polling = match s.polling_code {
-        Some(c) => viper::polling_hz(c).map_or_else(|| format!("raw 0x{c:02x}"), |hz| hz.to_string()),
+        Some(c) => {
+            viper::polling_hz(c).map_or_else(|| format!("raw 0x{c:02x}"), |hz| hz.to_string())
+        }
         None => none(),
     };
     out += &format!("  polling rate   {polling} Hz\n");
     if let Some((x, y)) = s.dpi {
-        let xy = if x == y { String::new() } else { format!(" x {y}") };
+        let xy = if x == y {
+            String::new()
+        } else {
+            format!(" x {y}")
+        };
         out += &format!("  current DPI    {x}{xy}\n");
     }
     if let Some((active, stages)) = &s.dpi_stages {
         let list: Vec<String> = stages
             .iter()
             .enumerate()
-            .map(|(i, (x, _))| if i + 1 == *active as usize { format!("[{x}]") } else { x.to_string() })
+            .map(|(i, (x, _))| {
+                if i + 1 == *active as usize {
+                    format!("[{x}]")
+                } else {
+                    x.to_string()
+                }
+            })
             .collect();
-        out += &format!("  DPI stages     {}   ([] = active stage {active})\n", list.join("  "));
+        out += &format!(
+            "  DPI stages     {}   ([] = active stage {active})\n",
+            list.join("  ")
+        );
     }
     for (field, err) in &s.errors {
         out += &format!("  ({field}: {err})\n");
@@ -113,24 +131,43 @@ fn format_info(s: &Snapshot) -> String {
         out.push_str(&l);
         out.push('\n');
     };
-    line(format!("Pulsar X2A   firmware {}   active profile {}", s.firmware, s.active_profile));
+    line(format!(
+        "Pulsar X2A   firmware {}   active profile {}",
+        s.firmware, s.active_profile
+    ));
     line(String::new());
     line("Global".into());
     line(format!("  polling rate   {} Hz", s.polling_hz));
     line(format!("  debounce       {} ms", s.debounce_ms));
     for (t, on) in &s.toggles {
-        line(format!("  {:<14} {}", t.name(), if *on { "on" } else { "off" }));
+        line(format!(
+            "  {:<14} {}",
+            t.name(),
+            if *on { "on" } else { "off" }
+        ));
     }
     line(String::new());
-    let active = if s.profile == s.active_profile { "  (active)" } else { "" };
+    let active = if s.profile == s.active_profile {
+        "  (active)"
+    } else {
+        ""
+    };
     line(format!("Profile {}{active}", s.profile));
     let dpis: Vec<String> = s
         .dpi_stages
         .iter()
         .enumerate()
         .map(|(i, &(x, y))| {
-            let v = if x == y { x.to_string() } else { format!("{x}x{y}") };
-            if i + 1 == s.dpi_active as usize { format!("[{v}]") } else { v }
+            let v = if x == y {
+                x.to_string()
+            } else {
+                format!("{x}x{y}")
+            };
+            if i + 1 == s.dpi_active as usize {
+                format!("[{v}]")
+            } else {
+                v
+            }
         })
         .collect();
     line(format!(
@@ -141,7 +178,11 @@ fn format_info(s: &Snapshot) -> String {
     line(format!("  lift-off       {}", x2a::describe_lod(s.lod_raw)));
     line("  buttons".into());
     for (btn, binding) in &s.buttons {
-        let mark = if *binding == btn.factory() { "" } else { "   <- changed" };
+        let mark = if *binding == btn.factory() {
+            ""
+        } else {
+            "   <- changed"
+        };
         line(format!("    {:<28} -> {binding}{mark}", btn.label()));
     }
     out

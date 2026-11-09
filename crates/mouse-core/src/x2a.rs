@@ -213,7 +213,10 @@ pub fn key_name(code: u8) -> Option<String> {
         0x04..=0x1D => Some(char::from(b'a' + (code - 0x04)).to_string()),
         0x1E..=0x27 => Some(((code - 0x1E + 1) % 10).to_string()),
         0x3A..=0x45 => Some(format!("f{}", code - 0x39)),
-        _ => SPECIAL_KEYS.iter().find(|(_, c)| *c == code).map(|(n, _)| n.to_string()),
+        _ => SPECIAL_KEYS
+            .iter()
+            .find(|(_, c)| *c == code)
+            .map(|(n, _)| n.to_string()),
     }
 }
 
@@ -242,11 +245,20 @@ impl Binding {
                     .map(|(n, _)| n.to_string())
                     .collect();
                 if self.a2 != 0 {
-                    names.push(key_name(self.a2).unwrap_or_else(|| format!("key 0x{:02x}", self.a2)));
+                    names.push(
+                        key_name(self.a2).unwrap_or_else(|| format!("key 0x{:02x}", self.a2)),
+                    );
                 }
-                if names.is_empty() { "nothing".into() } else { names.join("+") }
+                if names.is_empty() {
+                    "nothing".into()
+                } else {
+                    names.join("+")
+                }
             }
-            _ => format!("type 0x{:02x} (0x{:02x}, 0x{:02x})", self.kind, self.a1, self.a2),
+            _ => format!(
+                "type 0x{:02x} (0x{:02x}, 0x{:02x})",
+                self.kind, self.a1, self.a2
+            ),
         }
     }
 }
@@ -326,10 +338,16 @@ impl X2a {
     /// Open the wired X2A's configuration interface.
     pub fn open() -> Result<Self> {
         let all = hid::interfaces(VID, PID)?;
-        let mut candidates: Vec<_> = all.iter().filter(|i| i.interface == CONFIG_INTERFACE).collect();
+        let mut candidates: Vec<_> = all
+            .iter()
+            .filter(|i| i.interface == CONFIG_INTERFACE)
+            .collect();
         if candidates.is_empty() {
             // If the OS reports no interface numbers, the vendor-defined usage page marks it.
-            candidates = all.iter().filter(|i| i.interface == -1 && i.usage_page >= 0xFF00).collect();
+            candidates = all
+                .iter()
+                .filter(|i| i.interface == -1 && i.usage_page >= 0xFF00)
+                .collect();
         }
         if candidates.is_empty() {
             return Err(Error::NotFound(
@@ -341,7 +359,12 @@ impl X2a {
         let mut last = String::new();
         for iface in candidates {
             match Device::open(iface, REPORT_SIZE) {
-                Ok(dev) => return Ok(X2a { dev, resends_left: 6 }),
+                Ok(dev) => {
+                    return Ok(X2a {
+                        dev,
+                        resends_left: 6,
+                    });
+                }
                 Err(e) => last = e.to_string(),
             }
         }
@@ -374,7 +397,10 @@ impl X2a {
             rsp = self.poll(&[ANSWERED])?;
         }
         if rsp[0] != ANSWERED {
-            return Err(Error::Protocol(format!("Bad reply from mouse (byte 0 = 0x{:02x})", rsp[0])));
+            return Err(Error::Protocol(format!(
+                "Bad reply from mouse (byte 0 = 0x{:02x})",
+                rsp[0]
+            )));
         }
         self.resends_left = 0;
         Ok(rsp)
@@ -382,7 +408,12 @@ impl X2a {
 
     pub fn firmware(&mut self) -> Result<String> {
         let rsp = self.read(0x01, 0x07, 0x04, 0, &[])?;
-        Ok(rsp[6..10].iter().rev().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join("."))
+        Ok(rsp[6..10]
+            .iter()
+            .rev()
+            .map(|b| format!("{b:02X}"))
+            .collect::<Vec<_>>()
+            .join("."))
     }
 
     pub fn active_profile(&mut self) -> Result<u8> {
@@ -420,7 +451,11 @@ impl X2a {
 
     pub fn button(&mut self, btn: Button, profile: u8) -> Result<Binding> {
         let rsp = self.read(0x04, 0x01, 0x06, profile, &[btn.id(), 0xFF])?;
-        Ok(Binding { kind: rsp[8], a1: rsp[9], a2: rsp[10] })
+        Ok(Binding {
+            kind: rsp[8],
+            a1: rsp[9],
+            a2: rsp[10],
+        })
     }
 
     /// Read everything; `profile` None = the active profile.
@@ -485,17 +520,53 @@ mod tests {
     #[test]
     fn packets_match_python() {
         let vectors: &[PacketVector] = &[
-            ((0x01, 0x87, 0x04, 0, &[]), "00018704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008c00"),
-            ((0x02, 0x86, 0x01, 0, &[]), "00028601000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008900"),
-            ((0x02, 0x06, 0x01, 3, &[]), "00020601000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c00"),
-            ((0x04, 0x03, 0x03, 0, &[1]), "00040303000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b00"),
-            ((0x01, 0x09, 0x02, 0, &[8]), "00010902000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001400"),
-            ((0x04, 0x81, 0x06, 1, &[1, 255]), "0004810600000101ff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008c01"),
-            ((0x04, 0x01, 0x06, 1, &[1, 1, 2, 0]), "00040106000001010102000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000"),
-            ((0x05, 0x04, 0x21, 2, &[3, 3, 1, 144, 1, 144, 1, 2, 32, 3, 32, 3, 3, 128, 12, 128, 12]), "0005042100000203030190019001022003200303800c800c0000000000000000000000000000000000000000000000000000000000000000000000000000b802"),
+            (
+                (0x01, 0x87, 0x04, 0, &[]),
+                "00018704000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008c00",
+            ),
+            (
+                (0x02, 0x86, 0x01, 0, &[]),
+                "00028601000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008900",
+            ),
+            (
+                (0x02, 0x06, 0x01, 3, &[]),
+                "00020601000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c00",
+            ),
+            (
+                (0x04, 0x03, 0x03, 0, &[1]),
+                "00040303000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b00",
+            ),
+            (
+                (0x01, 0x09, 0x02, 0, &[8]),
+                "00010902000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001400",
+            ),
+            (
+                (0x04, 0x81, 0x06, 1, &[1, 255]),
+                "0004810600000101ff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008c01",
+            ),
+            (
+                (0x04, 0x01, 0x06, 1, &[1, 1, 2, 0]),
+                "00040106000001010102000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000",
+            ),
+            (
+                (
+                    0x05,
+                    0x04,
+                    0x21,
+                    2,
+                    &[
+                        3, 3, 1, 144, 1, 144, 1, 2, 32, 3, 32, 3, 3, 128, 12, 128, 12,
+                    ],
+                ),
+                "0005042100000203030190019001022003200303800c800c0000000000000000000000000000000000000000000000000000000000000000000000000000b802",
+            ),
         ];
         for ((cat, reg, sub, prof, payload), want) in vectors {
-            assert_eq!(hex(&build(*cat, *reg, *sub, *prof, payload)), *want, "{cat:02x}/{reg:02x}/{sub:02x}");
+            assert_eq!(
+                hex(&build(*cat, *reg, *sub, *prof, payload)),
+                *want,
+                "{cat:02x}/{reg:02x}/{sub:02x}"
+            );
         }
     }
 
@@ -522,7 +593,15 @@ mod tests {
             ((0x42, 0x01, 0x02), "type 0x42 (0x01, 0x02)"),
         ];
         for ((kind, a1, a2), want) in vectors {
-            assert_eq!(Binding { kind: *kind, a1: *a1, a2: *a2 }.describe(), *want);
+            assert_eq!(
+                Binding {
+                    kind: *kind,
+                    a1: *a1,
+                    a2: *a2
+                }
+                .describe(),
+                *want
+            );
         }
     }
 
@@ -550,7 +629,16 @@ mod tests {
     #[test]
     fn factory_bindings_match_python() {
         // BUTTON_DEFAULTS in pulsar_x2a.py
-        let want = [(1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 4), (1, 5), (9, 3)];
+        let want = [
+            (1, 1),
+            (1, 2),
+            (1, 3),
+            (1, 4),
+            (1, 5),
+            (1, 4),
+            (1, 5),
+            (9, 3),
+        ];
         for (btn, (k, a1)) in Button::ALL.iter().zip(want) {
             assert_eq!(btn.factory(), Binding { kind: k, a1, a2: 0 }, "{btn:?}");
         }

@@ -1,0 +1,43 @@
+# Builds and tests on every push and pull request. No mice in the cloud: this runs the unit
+# tests (packet bytes, reply parsing); hardware checks stay manual (see HANDOFF.md).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Formatting
+        run: cargo fmt --check
+      - name: Lints
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Unit tests
+        run: cargo test
+      - name: Release build
+        run: cargo build --release
+
+  python:
+    name: Python (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Byte-compile every module
+        run: python -m py_compile pulsar_x2a.py razer_viper.py rawinput_monitor.py rawaccel_cfg.py test_dpi.py mouse_portal.py mouse_startup.py set_mouse.py

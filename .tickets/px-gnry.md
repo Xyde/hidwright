@@ -1,6 +1,6 @@
 ---
 id: px-gnry
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-11-08T22:43:49Z
@@ -31,3 +31,7 @@ Name chosen by the agent (user delegated, 2026-11-08): hidwright (HID + wright, 
 **2026-11-09T00:08:41Z**
 
 Push blocked 2026-11-08 by Claude Code's auto-mode classifier ('Create Public Surface'). Ready: bookmark main at the README/licence change, history scrubbed. User runs: gh repo create Xyde/hidwright --public --description ...; jj git remote add origin https://github.com/Xyde/hidwright.git; jj git push --bookmark main. After that, the agent can add CI (GitHub Actions: Windows + macOS build/test).
+
+**2026-11-09T18:59:07Z**
+
+Published 2026-11-09 by the user: github.com/Xyde/hidwright (public), 4 commits, all authored Xyde <noreply>, 53 files, 0 build files. CI workflow (.github/workflows/ci.yml, Windows + macOS) is committed locally on main and waits for the user's push.

@@ -87,8 +87,13 @@ impl Viper {
     /// Open the Viper: the interface with a 90-byte feature report that answers a firmware query.
     pub fn open() -> Result<Self> {
         for iface in hid::interfaces(VID, PID)? {
-            let Ok(dev) = Device::open(&iface, REPORT_LEN) else { continue };
-            let mut v = Viper { dev, tid: TRANSACTION_IDS[0] };
+            let Ok(dev) = Device::open(&iface, REPORT_LEN) else {
+                continue;
+            };
+            let mut v = Viper {
+                dev,
+                tid: TRANSACTION_IDS[0],
+            };
             for tid in TRANSACTION_IDS {
                 v.tid = tid;
                 if v.firmware().is_ok() {
@@ -96,7 +101,9 @@ impl Viper {
                 }
             }
         }
-        Err(Error::NotFound("Razer Viper not found or not answering (is Razer Synapse holding it?)".into()))
+        Err(Error::NotFound(
+            "Razer Viper not found or not answering (is Razer Synapse holding it?)".into(),
+        ))
     }
 
     /// Send one request and return the reply's argument bytes (`[8..88]`).
@@ -146,7 +153,10 @@ impl Viper {
 
     pub fn dpi(&self) -> Result<(u16, u16)> {
         let a = self.request(0x04, 0x85, 0x07, &[NOSTORE])?;
-        Ok((u16::from_be_bytes([a[1], a[2]]), u16::from_be_bytes([a[3], a[4]])))
+        Ok((
+            u16::from_be_bytes([a[1], a[2]]),
+            u16::from_be_bytes([a[3], a[4]]),
+        ))
     }
 
     pub fn dpi_stages(&self) -> Result<(u8, Vec<(u16, u16)>)> {
@@ -156,7 +166,11 @@ impl Viper {
 
     /// Read everything; failures are collected instead of stopping.
     pub fn info(&self) -> Info {
-        fn take<T>(name: &'static str, r: Result<T>, errors: &mut Vec<(&'static str, String)>) -> Option<T> {
+        fn take<T>(
+            name: &'static str,
+            r: Result<T>,
+            errors: &mut Vec<(&'static str, String)>,
+        ) -> Option<T> {
             r.map_err(|e| errors.push((name, e.to_string()))).ok()
         }
         let mut errors = Vec::new();
@@ -178,7 +192,10 @@ fn parse_dpi_stages(a: &[u8]) -> (u8, Vec<(u16, u16)>) {
     let stages = (0..count.min(5))
         .map(|i| {
             let s = &a[3 + 7 * i..];
-            (u16::from_be_bytes([s[1], s[2]]), u16::from_be_bytes([s[3], s[4]]))
+            (
+                u16::from_be_bytes([s[1], s[2]]),
+                u16::from_be_bytes([s[3], s[4]]),
+            )
         })
         .collect();
     (active, stages)
@@ -200,11 +217,27 @@ mod tests {
             (0x00, 0x81, 0x02, &[], pad("001f000000020081") + "8300"),
             (0x00, 0x82, 0x16, &[], pad("001f000000160082") + "9400"),
             (0x00, 0x85, 0x01, &[], pad("001f000000010085") + "8400"),
-            (0x04, 0x85, 0x07, &[NOSTORE], pad("001f000000070485") + "8600"),
-            (0x04, 0x86, 0x26, &[VARSTORE], pad("001f00000026048601") + "a500"),
+            (
+                0x04,
+                0x85,
+                0x07,
+                &[NOSTORE],
+                pad("001f000000070485") + "8600",
+            ),
+            (
+                0x04,
+                0x86,
+                0x26,
+                &[VARSTORE],
+                pad("001f00000026048601") + "a500",
+            ),
         ];
         for (class, cmd, size, args, want) in cases {
-            assert_eq!(hex(&build_request(0x1F, class, cmd, size, args)), want, "{class:02x}/{cmd:02x}");
+            assert_eq!(
+                hex(&build_request(0x1F, class, cmd, size, args)),
+                want,
+                "{class:02x}/{cmd:02x}"
+            );
         }
     }
 
@@ -213,11 +246,21 @@ mod tests {
     fn dpi_stages_parse_like_python() {
         let a = [
             0x01, 5, 5, 1, 0x01, 0x90, 0x01, 0x90, 0, 0, 2, 0x03, 0x20, 0x03, 0x20, 0, 0, 3, 0x07,
-            0x08, 0x07, 0x08, 0, 0, 4, 0x09, 0x60, 0x09, 0x60, 0, 0, 5, 0x0C, 0x80, 0x0C, 0x80, 0, 0,
+            0x08, 0x07, 0x08, 0, 0, 4, 0x09, 0x60, 0x09, 0x60, 0, 0, 5, 0x0C, 0x80, 0x0C, 0x80, 0,
+            0,
         ];
         assert_eq!(
             parse_dpi_stages(&a),
-            (5, vec![(400, 400), (800, 800), (1800, 1800), (2400, 2400), (3200, 3200)])
+            (
+                5,
+                vec![
+                    (400, 400),
+                    (800, 800),
+                    (1800, 1800),
+                    (2400, 2400),
+                    (3200, 3200)
+                ]
+            )
         );
     }
 
