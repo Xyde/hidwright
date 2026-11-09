@@ -22,12 +22,16 @@ pub enum Error {
     Hid(String),
     /// The mouse answered, but not in the way the protocol says it should.
     Protocol(String),
+    /// A value the user asked for is out of range or not understood; nothing was sent.
+    Input(String),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::NotFound(m) | Error::Hid(m) | Error::Protocol(m) => f.write_str(m),
+            Error::NotFound(m) | Error::Hid(m) | Error::Protocol(m) | Error::Input(m) => {
+                f.write_str(m)
+            }
         }
     }
 }
