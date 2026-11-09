@@ -21,10 +21,13 @@ impl RawMouse {
     }
 }
 
-/// Mice we know by name, keyed by the VID/PID part of their id.
-pub const KNOWN: [(&str, &str); 2] = [
+/// Mice we know by name, keyed by the VID/PID part of their id. The M42 isn't in the Python's
+/// list, so `set-mouse rotation` there hides it; here it shows (it has its own RawAccel
+/// profile, "Xtrfy M42").
+pub const KNOWN: [(&str, &str); 3] = [
     ("VID_3710&PID_1404", "Pulsar X2A"),
     ("VID_1532&PID_0078", "Razer Viper"),
+    ("VID_2EA8&PID_2203", "Xtrfy M42"),
 ];
 
 /// Display name for a device id (or interface name, if there is no id).
@@ -156,10 +159,7 @@ mod tests {
     fn labels_like_python() {
         assert_eq!(label(r"HID\VID_3710&PID_1404&MI_00"), "Pulsar X2A");
         assert_eq!(label(r"HID\vid_1532&pid_0078&mi_00"), "Razer Viper");
-        assert_eq!(
-            label(r"HID\VID_2EA8&PID_2203&MI_00"),
-            "Mouse VID_2EA8&PID_2203"
-        );
+        assert_eq!(label(r"HID\VID_2EA8&PID_2203&MI_00"), "Xtrfy M42");
         assert_eq!(
             label(r"HID\VID_0483&PID_5710&MI_02&Col03"),
             "Mouse VID_0483&PID_5710"

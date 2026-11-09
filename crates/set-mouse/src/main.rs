@@ -55,17 +55,19 @@ set-mouse (Rust, port in progress)
 
   RawAccel rotation (per mouse):
   set-mouse rotation              show each mouse's rotation
-  set-mouse rotation pulsar 0     set one mouse's rotation (gives it its own profile)
+  set-mouse rotation pulsar 0     set one mouse's rotation (pulsar, razer, m42)
   set-mouse reload                load settings.json into RawAccel now (runs at sign-in too)
 
 Not here yet (the Python `set-mouse` on PATH does it): portal.";
 
 /// Names `set-mouse rotation` accepts, and the mouse each one means.
-const ALIASES: [(&str, &str); 4] = [
+const ALIASES: [(&str, &str); 6] = [
     ("pulsar", "Pulsar X2A"),
     ("x2a", "Pulsar X2A"),
     ("razer", "Razer Viper"),
     ("viper", "Razer Viper"),
+    ("m42", "Xtrfy M42"),
+    ("xtrfy", "Xtrfy M42"),
 ];
 
 /// Pulsar commands that change something.
@@ -123,7 +125,7 @@ fn run(args: &[String]) -> Result<(), String> {
         Some("rotation") => match &args[1..] {
             [] => show_rotation(),
             [who, deg] => set_rotation(who, deg),
-            _ => Err("usage: set-mouse rotation [pulsar|razer DEGREES]".into()),
+            _ => Err("usage: set-mouse rotation [pulsar|razer|m42 DEGREES]".into()),
         },
         Some("reload") => reload(),
         Some("help" | "-h" | "--help") => {
