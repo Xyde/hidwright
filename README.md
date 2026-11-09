@@ -7,8 +7,8 @@ A small, home-made tool for gaming mice, so you don't need the vendor's software
   ours sits between your hand and the game.
 - **Each mouse gets its own settings.** Swapping buttons on one mouse never touches another.
 
-> Status: works on **Windows** today (Python version). A faster Rust version, a desktop app and macOS
-> support are being built. Not affiliated with Pulsar, Razer, Xtrfy/Cherry, BeyondQ or RawAccel.
+> Status: works on **Windows** today. The command-line tool also comes as a faster Rust program (see
+> below); a desktop app and macOS support are being built. Not affiliated with Pulsar, Razer, Xtrfy/Cherry, BeyondQ or RawAccel.
 
 ## What it supports
 
@@ -37,6 +37,13 @@ A small, home-made tool for gaming mice, so you don't need the vendor's software
 
 Want to type just `set-mouse` from anywhere? Add the project's `bin` folder to your user PATH
 (Windows Settings → search "environment variables" → *Path* → *New*), then open a new terminal.
+
+### Optional: the faster Rust version
+
+If you have [Rust](https://rustup.rs) installed, run `cargo build --release` in the project folder once.
+From then on `set-mouse` uses the Rust program (one small file, starts in milliseconds, no Python
+needed for it). Without that build, `set-mouse` simply uses the Python version. The Mouse Portal is
+Python either way, for now.
 
 ### Optional: RawAccel (sensor rotation)
 
@@ -69,6 +76,7 @@ Without the PATH step, write `python set_mouse.py` instead of `set-mouse`.
 ## For developers
 
 - `crates/`: the Rust rewrite (`cargo build --release`, then `target\release\set-mouse.exe`).
+  `bin\set-mouse.cmd` runs it when it exists, and the Python otherwise (and always for `portal`).
 - `HANDOFF.md` and `.tickets/` are the maintainer's working notes (decisions, open questions).
 
 ## Credits

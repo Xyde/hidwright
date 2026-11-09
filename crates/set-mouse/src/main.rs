@@ -1,8 +1,9 @@
 //! set-mouse, Rust version (port in progress, epic px-0oek).
 //!
 //! Reads both mice, writes every Pulsar X2A setting, sets per-mouse RawAccel rotation and loads
-//! RawAccel's settings. The portal still lives in the Python version, which stays on PATH as
-//! `set-mouse` until this one reaches parity. Messages match the Python's word for word.
+//! RawAccel's settings. This is what `set-mouse` on PATH runs (`bin\set-mouse.cmd`), except
+//! `set-mouse portal`, which is still the Python version. Messages match the Python's word for
+//! word, apart from deliberate differences (the M42 in `rotation`).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

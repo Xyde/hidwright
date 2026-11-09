@@ -20,3 +20,7 @@ Port razer_viper.py with the px-wfee fix (resend on reply cls/cmd mismatch). The
 **2026-11-08T23:50:53Z**
 
 Read side done 2026-11-08: viper.rs (open by 90-byte feature report + transaction-id probe, firmware/serial/polling/dpi/dpi_stages, px-wfee retry). Request bytes and stage parsing tested against vectors captured from the Python through a fake hid.dll; 'set-mouse razer' output identical to python razer_viper.py on the real mouse. Remaining: temporary DPI (NOSTORE, for the calibrator), then the writes for px-w1a0 (lighting, persistent stages, polling), each checked against OpenRazer first.
+
+**2026-11-09T20:22:35Z**
+
+2026-11-09: temporary DPI done (Viper::set_dpi_temporary, NOSTORE, vectors from the Python; used by dpi_restore.rs and checked on the real mouse with a same-value restore). Remaining: px-w1a0 writes (lighting, persistent stages, polling), each checked against OpenRazer first.
