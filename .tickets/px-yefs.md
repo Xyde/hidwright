@@ -35,3 +35,7 @@ User runs (Nushell or PowerShell, same text):
   schtasks /Run /TN "Mouse Portal - load RawAccel"
 Then the agent checks Get-ScheduledTaskInfo (LastTaskResult 0) + the new startup.log line. Then a real reboot, and the same check (like px-p010).
 Rollback: schtasks /Create /TN "Mouse Portal - load RawAccel" /XML "<project>\task-backup-python.local.xml" /F
+
+**2026-11-09T20:33:40Z**
+
+2026-11-09: user repointed the task (schtasks /Change; the run-as password prompt left empty: the account has none and the task is Interactive / run only when logged on, so none is needed). Verified: action = bin\set-mouse-startup.exe, principal unchanged (Interactive, Limited), manual run 15:31:48 -> LastTaskResult 0, startup.log line 15:31:49 identical to the Python's. CI 42693897148 green (Windows, macOS, Python). Left: user reboots once; agent then checks Get-ScheduledTaskInfo (LastRunTime = that sign-in, result 0) and the startup.log line, then closes this ticket.
