@@ -5,8 +5,8 @@ _Written 2026-11-09 by Claude (Claude Code desktop session). Replaces the previo
 ## Resume here
 
 - **What this is:** `hidwright`, a self-built, bloat-free replacement for vendor peripheral software. The local folder is still named `pulsar-x2a`. The **Python version is what's in daily use**: `set-mouse` on PATH, the Mouse Portal, the rotation calibrator and the sign-in loader. It configures a Pulsar X2A over HID, reads a Razer Viper, and gives each mouse its own RawAccel rotation. A **Rust + egui rewrite** is in progress in `crates/` (epic `px-0oek`). Goals: replace Razer Synapse completely, cover more peripherals (Xtrfy M42, Dumang DK6 keyboard), and run on the user's Mac Studio too.
-- **Where it stands:** Rust reads both mice with output identical to the Python, and fixes the Python's Synapse read collisions. Rust also writes every Pulsar setting (`px-5xrv` part a, 2026-11-09): same packets and same messages as the Python, checked on the mouse. RawAccel, the portal and Viper writes are still Python-only. Public repo with CI green on Windows and macOS. The Pulsar's global settings now survive an unplug (`px-337u`, solved 2026-11-09: writes must carry the active profile byte, not 0). The mouse is at the user's chosen debounce 1 ms / ripple off.
-- **Next action (agent):** Rust phase 2 (`px-5xrv`) part b: RawAccel config (`rawaccel_cfg.py`: find the folder, back up, per-mouse profiles in `devices[]`, run `writer.exe`), the `rotation` and `reload` commands, and the interrupted-test-DPI restore. Then part c: switch `bin/set-mouse.cmd` to the Rust exe once `set-mouse` with no arguments matches too.
+- **Where it stands:** Rust reads both mice with output identical to the Python, and fixes the Python's Synapse read collisions. Rust also writes every Pulsar setting (`px-5xrv` part a) and does RawAccel rotation, `reload` and the interrupted-calibration DPI restore (part b), all 2026-11-09: same packets, same messages and byte-identical `settings.json` as the Python, checked on the hardware. Only the portal (and Viper writes beyond temporary DPI) are still Python-only. Both versions now check that each X2A reply echoes its request (the mouse was sometimes read as leftover replies, see Decisions). Public repo with CI green on Windows and macOS. The Pulsar's global settings now survive an unplug (`px-337u`, solved 2026-11-09: writes must carry the active profile byte, not 0). The mouse is at the user's chosen debounce 1 ms / ripple off.
+- **Next action (agent, needs the user's go):** `px-5xrv` part c: switch `bin/set-mouse.cmd` to the Rust exe, with `set-mouse portal` still handed to the Python (the portal isn't ported). Parity is shown (see `px-5xrv` notes). The sign-in task stays on `mouse_startup.py` until `px-yefs`.
 - **Paste into a fresh session:**
   > Read HANDOFF.md in ~\Documents\pulsar-x2a first. Run `jj st`, `tk ready` and `set-mouse` to confirm the repo, the tickets, the mice and RawAccel still match "Current state", then continue with the next action (Rust phase 2, px-5xrv). Explain what you're doing as you go.
 
@@ -55,6 +55,11 @@ This session (2026-11-08/09):
 | Dumang layer switching from a mouse: computer relays a key to a `BoardSyncPacket` (`px-k3jg`) | A mouse can't press keyboard keys; the DK6 accepts layer changes from the host | Firmware-only (impossible across devices) | 2026-11-08 |
 | Dumang protocol: **reimplement from the packet format**, don't copy code | Upstream `mayanez/dumang-keyboard-ctrl` is GPL-3.0; copying would force GPL on the repo | Porting its code | 2026-11-08 |
 | Mac gaming: for the user's **own engine**, apply rotation inside the engine from a per-mouse profile our tool provides (`px-sk2o`, user to decide) | No RawAccel on macOS; inside the engine it's free and adds no latency | CGEventTap (in the input path; games reading HID bypass it); DriverKit driver (Apple signing, big) | 2026-11-08 |
+| **X2A globals are written with the active profile byte** (`px-337u`) | Profile byte 0 changes RAM only (lost on unplug); 1-5 also saves. Replug-verified for debounce + ripple | Upstream's 0; a sign-in re-apply | 2026-11-09 |
+| **X2A replies must echo their request** (category, register, profile byte if set, first payload byte if set), in Rust and Python | The mouse keeps its last reply (status 0x01) until it has processed the next request. Early polls, mostly in a fresh session right after another one, read leftovers: shifted button bindings, firmware `03.09.0B.01` (a button reply). Measured: 936 read replies and 8 write-ack kinds fit the rule; afterwards 15/15 status runs matched | Status byte only (both versions before); comparing byte 3 (DPI reads answer with sub 0x21) | 2026-11-09 |
+| RawAccel in Rust via **`serde_json` + `preserve_order`**; output mimics Python's `json.dumps(indent=2)` + CRLF + `\uXXXX` | Keeps RawAccel's key order and comment keys; a rewrite is byte-identical, so changes are clean diffs. Verified on the real 7.6 KB file | Hand-written JSON (risk); sorted keys | 2026-11-09 |
+| Rust `startup.log` / `dpi_restore.json` live in the **Python install's folder** (`data_dir()` finds `mouse_startup.py` up to 3 folders above the exe), else next to the exe | The Python portal writes `dpi_restore.json` there; one shared log. Temporary until `px-t5i3` | `%LOCALAPPDATA%` (Python wouldn't see it) | 2026-11-09 |
+| Rust lists the **Xtrfy M42** in `rotation` (aliases `m42`, `xtrfy`) | It has its own RawAccel profile; the Python hid it. Done after parity was shown | Python parity | 2026-11-09 |
 
 ### Reversals
 
@@ -82,7 +87,7 @@ Each item is **verified** (checked 2026-11-09 while writing this; says how) or *
 - `rawaccel.exe` GUI retired to `…\RawAccel\_retired-gui` (**reported**, 2026-11-06/08)
 - Calibrator v2 (streamed live view, auto-finish, test-at-DPI and restore) tried with real swipes: "Everything went fine" (**reported**, `px-ha9z` closed)
 
-Version control: jj, colocated. `main` = `1bec8eda` "CI: Windows + macOS build/test; rustfmt" = `main@origin` (pushed by the user). Working copy `rqqmnkxv` on top holds ticket notes and this handoff, not pushed. History before the first push was rewritten to remove personal data; every revision was scanned, 0 hits. Tests: `cargo test` → 15 passed (**verified** 2026-11-09). CI run `42679662164`: Rust Windows ✅, Rust macOS ✅, Python ✅ (**verified**: `gh run view`).
+Version control: jj, colocated. `main@origin` = `1bec8eda` "CI: Windows + macOS build/test; rustfmt" (pushed by the user). On top, not pushed (2026-11-09): `rqqmnkxv` handoff rewrite (bookmark `main` still points here), `ulsuykkk` Pulsar globals saved, `vqmyvnvu` Rust X2A writes, `zmspwwov` Rust RawAccel + echo check, `xnsopvmr` M42 in rotation, then the working copy (tickets + this handoff). History before the first push was rewritten to remove personal data; every revision was scanned, 0 hits. Tests: `cargo test` → 26 passed (**verified** 2026-11-09). CI run `42679662164`: Rust Windows ✅, Rust macOS ✅, Python ✅ (**verified**: `gh run view`).
 
 ## Specs and reference values
 
@@ -91,6 +96,7 @@ Version control: jj, colocated. `main` = `1bec8eda` "CI: Windows + macOS build/t
 | Pulsar X2A wired | USB `3710:1404`, config on interface `MI_03` (vendor page), feature report ID 0, 64 bytes (65 with ID) | `pulsar_x2a.py`; `crates/mouse-core/src/x2a.rs` |
 | X2A packet | `[1]` cat, `[2]` reg (bit7 = read), `[3]` sub, `[6]` profile (0 = global, 1-5; **global writes need the active profile here to be saved**, 0 = RAM only), `[7..62]` payload, `[62..64]` LE u16 of `sum(bytes[0..62])` | upstream `packerlschupfer/pulsar-mouse-linux` `src/pulsar_mouse/drivers/x2a.py` (MIT) |
 | X2A reply byte 0 | `0x00` not answered, `0x01` answered, `0x02` pending (OK for writes), `0x03` refused | same |
+| X2A reply echo | Reads: `[1]` cat, `[2]` reg\|0x80, `[3]` sub (DPI read 0x15 comes back as 0x21), `[6]` profile for per-profile reads (data for firmware/active-profile), `[7]` button id for button reads. Write acks echo the whole packet. The buffer keeps the last reply until the next request is processed | measured 2026-11-09 (`answers()` in `x2a.rs` / `X2A.answers`) |
 | X2A commands (cat/reg/sub) | button `04/01/06` `[btn,type,a1,a2]`; polling `01/09/02` (125:1 250:2 500:4 1000:8); debounce `04/03/03`; angle-snap `07/04/02`; ripple `07/03/02`; motion-sync `07/05/02`; DPI write `05/04/21`; DPI read `05/04/15`; active stage `05/01/02`; LOD `07/02/03`; active profile `02/06/01` (profile in byte 6); firmware `01/07/04`; factory reset `02/05/01` (resets that profile **and all globals**) | same |
 | X2A factory globals | 1000 Hz, debounce 3 ms, angle-snap/ripple/motion-sync **off** | upstream comment "Measured on a cabled X2A (2026-10-13)" |
 | Razer Viper wired | USB `1532:0078`; 90-byte feature report (91 with ID); transaction id `0x1F`; crc = XOR of bytes 2..88 | OpenRazer; `crates/mouse-core/src/viper.rs` |
@@ -105,7 +111,7 @@ Version control: jj, colocated. `main` = `1bec8eda` "CI: Windows + macOS build/t
 | Rotation maths | recommended = current rotation − measured θ (Raw Input sees movement *after* RawAccel) | `mouse_portal.html` `calFinish` |
 | Swipe thresholds | turn `max(20, 0.1·dpi)`, min swipe `max(80, 0.4·dpi)` counts | `rawinput_monitor.thresholds` |
 | Portal | `http://127.0.0.1:8642` | `mouse_portal.py` |
-| Rust release exe | `target\release\set-mouse.exe`, ~211 KB (2026-11-09, with the X2A writes; was 169 KB); profile `lto`, `codegen-units = 1`, `strip`, `panic = "abort"` | `Cargo.toml` |
+| Rust release exe | `target\release\set-mouse.exe`, ~500 KB (2026-11-09 with RawAccel; 211 KB with X2A writes only; size decision `px-rwty`); profile `lto`, `codegen-units = 1`, `strip`, `panic = "abort"` | `Cargo.toml` |
 | Toolchain | rustc/cargo 1.99.1, MSVC Build Tools 2022; Python 3.15.2 | `rustc --version`; `vswhere` |
 | `windows-sys` | 0.61 (same version hidapi uses) | `crates/mouse-core/Cargo.toml` |
 
@@ -155,6 +161,8 @@ Sign-in task (PowerShell): `Get-ScheduledTaskInfo -TaskName "Mouse Portal - load
 - **`link.exe` on PATH is Git's coreutils `link`**, not MSVC's. Harmless: rustc finds MSVC through the Visual Studio installation.
 - **Shells:** commands for the user go in Nushell first, then PowerShell (not bash). On the Mac the user uses **fish**.
 - **Python prints CRLF on Windows, Rust prints LF.** Use `diff --strip-trailing-cr` for parity checks.
+- **Testing RawAccel writes without touching the driver:** copy `settings.json` into a scratch folder with a fake `writer.exe` (a 10-line Rust program that logs its arguments and exits with `FAKE_WRITER_EXIT`), and point `RAWACCEL_DIR` at it. Both versions honour `RAWACCEL_DIR`.
+- **`set-mouse` in Git Bash** isn't found (`.cmd` shims aren't run there); use Nushell/PowerShell, or `target/release/set-mouse.exe` / `python set_mouse.py`.
 - **Shell quoting:** inline `python -c` with Windows paths or backslashes broke twice. Put scripts in a file (scratchpad) instead.
 - **`tk` has no assign command:** change `assignee:` in `.tickets/<id>.md` directly. `tk.cmd` goes through cmd.exe; for long text use `bash ~/bin/ticket/ticket` from Git Bash.
 - From the old handoff, still true: RawAccel forgets settings on reboot (the sign-in task reloads them); Raw Input sees movement after RawAccel; the retired GUI can't run from `_retired-gui`; `set-mouse.cmd` + Ctrl+C asks "Terminate batch job"; only one portal at a time; `python -I` breaks sibling imports; `.gitignore` comments must be on their own line; the Claude app is packaged, so `%APPDATA%` writes from it can be redirected (check from outside).
@@ -183,10 +191,12 @@ Sign-in task (PowerShell): `Get-ScheduledTaskInfo -TaskName "Mouse Portal - load
 | Acceleration/sensitivity editing? | `px-xykv` | user decides | user decision |
 | Verify X2A lift-off encoding before using `lod` | `px-zd1z` | agent | nothing; low priority |
 | Calibrate the M42's own rotation | no ticket (mentioned in `px-8mzp`) | user | nothing |
-| Python `set-mouse rotation` doesn't list the M42 (unnamed mice are filtered out) | no ticket (noted in `px-8mzp`); fix in the Rust port | agent | — |
+| Python `set-mouse rotation` doesn't list the M42 (unnamed mice are filtered out) | fixed in the Rust version (2026-11-09); the Python stays as is | — | — |
+| Rust exe size 500 KB: keep, or `opt-level = "z"` (410 KB)? | `px-rwty` | user decides | user decision |
 
 ## Unknowns and unverified
 
+- **When the X2A answers late** (the leftover-reply problem): seen in bursts on 2026-11-09 (~14:44-14:50 and again later), never in 400 idle back-to-back reads. Guess, untested: slower while the mouse is moved or clicked. The echo check handles it either way; to test, run a read loop while moving the mouse.
 - **Viper without Synapse:** does the logo keep spectrum cycling (Razer's factory default) and at what brightness? Check with the `px-23l1` trial.
 - **What else the Viper supports** (onboard remapping? lift-off?): check OpenRazer before `px-w1a0`.
 - **macOS with real mice:** does macOS report interface numbers? Can we send feature reports to the Viper's mouse interface without exclusive access? (`px-e6p0`)
@@ -214,8 +224,10 @@ Sign-in task (PowerShell): `Get-ScheduledTaskInfo -TaskName "Mouse Portal - load
 - `Cargo.toml`: workspace (`crates/mouse-core`, `crates/set-mouse`), release profile.
 - `crates/mouse-core/src/hid/`: `mod.rs` (shared `Interface`, report-ID helper), `windows.rs` (SetupAPI + hid.dll), `macos.rs` (hidapi).
 - `crates/mouse-core/src/x2a.rs`: Pulsar reads (`Snapshot`) and writes (`Setting` enum + `X2a::write`, which picks the profile byte: active profile for globals), `Binding::parse`, tests vs Python vectors.
-- `crates/mouse-core/src/viper.rs`: Viper read side, collision retry, tests vs Python vectors.
-- `crates/set-mouse/src/main.rs`: Rust CLI (`set-mouse`, `info`, all Pulsar write commands with the Python's messages, `razer`, `help`). Input is checked before the mouse is opened.
+- `crates/mouse-core/src/viper.rs`: Viper reads, temporary DPI (NOSTORE), collision retry, tests vs Python vectors.
+- `crates/mouse-core/src/rawaccel.rs`: RawAccel `settings.json` (find, resolve, plan, apply, `writer.exe`, reload). Test fixtures in `crates/mouse-core/tests/fixtures/rawaccel/` (made by `rawaccel_cfg.plan`).
+- `crates/mouse-core/src/rawinput.rs`: plugged-in mice under RawAccel's ids. `dpi_restore.rs`: undo an interrupted calibration.
+- `crates/set-mouse/src/main.rs`: Rust CLI: everything `set-mouse help` lists except `portal`. Input is checked before the mouse is opened; `say!` instead of `println!` (no panic when piped into `head`).
 - `.github/workflows/ci.yml`: CI (Windows + macOS Rust, Python compile).
 - Python (daily use): `set_mouse.py` (dispatcher), `bin/set-mouse.cmd` (PATH shim), `pulsar_x2a.py`, `razer_viper.py`, `rawinput_monitor.py`, `rawaccel_cfg.py`, `test_dpi.py`, `mouse_portal.py` + `mouse_portal.html`, `mouse_startup.py` (sign-in loader → `startup.log`).
 - `.tickets/`: `tk` tickets. `.claude/launch.json`: browser-pane preview config.
