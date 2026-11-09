@@ -1,6 +1,6 @@
 ---
 id: px-yefs
-status: open
+status: in_progress
 deps: [px-5xrv]
 links: []
 created: 2026-11-08T22:34:08Z
@@ -20,3 +20,18 @@ Replace mouse_startup.py with 'set-mouse startup' (or similar), same startup.log
 **2026-11-09T20:22:35Z**
 
 2026-11-09: unblocked (px-5xrv closed). 'set-mouse reload' already = mouse_startup.py (6 tries 5 s apart, same startup.log lines, log in the Python folder via data_dir()). Open design point: the task runs pythonw (no window); the Rust exe is a console program, so at sign-in a console would flash. Options: a second tiny GUI-subsystem binary (e.g. set-mouse-startup.exe with #![windows_subsystem = "windows"]), or launching via conhost --headless / a VBS wrapper. Agent leans to the GUI-subsystem binary (no extra process, no script host). Repointing the scheduled task needs the user's OK; verify after a real reboot.
+
+**2026-11-09T20:31:10Z**
+
+2026-11-09: built and tested; waiting for the user to repoint the task (the agent is blocked from changing scheduled tasks).
+- crates/set-mouse/src/bin/set-mouse-startup.rs: windows_subsystem = "windows" (PE subsystem 2 checked, set-mouse.exe stays 3 = console). Calls rawaccel::reload(6 tries, 5 s), writes one startup.log line via shared.rs (same code as `set-mouse reload`), prints nothing, exit 0/1.
+- Tested: by hand from target/release and from bin/ -> exit 0, nothing printed, log line identical to mouse_startup.py's; failure path (RawAccel unfindable, run from scratch so the real log stays clean) -> exit 1, "RawAccel folder or settings.json not found; nothing loaded".
+- Copy for the task: bin/set-mouse-startup.exe (gitignore bin/*.exe). Refresh after loader changes: cp target/release/set-mouse-startup.exe bin/
+- Backup of the task as it was: task-backup-python.local.xml in the project folder (git-ignored via *.local.xml, re-encoded to real UTF-16 so schtasks accepts it).
+- Pulsar globals re-apply (mentioned in this ticket's description) no longer needed: px-337u solved persistence.
+
+User runs (Nushell or PowerShell, same text):
+  schtasks /Change /TN "Mouse Portal - load RawAccel" /TR "C:\Users\<you>\Documents\pulsar-x2a\bin\set-mouse-startup.exe"
+  schtasks /Run /TN "Mouse Portal - load RawAccel"
+Then the agent checks Get-ScheduledTaskInfo (LastTaskResult 0) + the new startup.log line. Then a real reboot, and the same check (like px-p010).
+Rollback: schtasks /Create /TN "Mouse Portal - load RawAccel" /XML "<project>\task-backup-python.local.xml" /F

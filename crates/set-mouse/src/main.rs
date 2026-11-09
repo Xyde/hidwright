@@ -5,15 +5,17 @@
 //! `set-mouse portal`, which is still the Python version. Messages match the Python's word for
 //! word, apart from deliberate differences (the M42 in `rotation`).
 
-use std::path::{Path, PathBuf};
+mod shared;
+
 use std::process::ExitCode;
 use std::time::Duration;
 
+use mouse_core::dpi_restore;
 use mouse_core::rawaccel::{self, Change};
 use mouse_core::rawinput::{self, RawMouse};
 use mouse_core::viper::{self, Viper};
 use mouse_core::x2a::{self, Binding, Button, Setting, Snapshot, Toggle, X2a};
-use mouse_core::{dpi_restore, local_time};
+use shared::data_dir;
 
 /// `println!` that stops quietly when the reader has gone (`set-mouse | head -1`) instead of
 /// panicking. Anything already sent to a mouse has been sent by then.
@@ -145,23 +147,6 @@ fn run(args: &[String]) -> Result<(), String> {
 
 // ------------------------------------------------------------------ files next to the tool
 
-/// Where `startup.log` and `dpi_restore.json` live. While the Python version is in daily use
-/// they are in its folder (the portal writes `dpi_restore.json` there), so look for its
-/// `mouse_startup.py` in the exe's folder and up to three folders above it (a cargo build sits
-/// in `target\release\`). Otherwise: the exe's own folder.
-/// Revisit when the Python is retired (ticket px-t5i3).
-fn data_dir() -> PathBuf {
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(Path::to_path_buf))
-        .unwrap_or_default();
-    exe_dir
-        .ancestors()
-        .take(4)
-        .find(|d| d.join("mouse_startup.py").is_file())
-        .map_or(exe_dir.clone(), Path::to_path_buf)
-}
-
 fn restore_interrupted_test_dpi() {
     let path = data_dir().join(dpi_restore::FILE_NAME);
     if !path.exists() {
@@ -181,18 +166,9 @@ fn restore_interrupted_test_dpi() {
     }
 }
 
-/// Append a timestamped line to `startup.log` (kept to its last 200 lines) and print it.
+/// Append a timestamped line to `startup.log` and print it.
 fn log(msg: &str) {
-    let (y, mo, d, h, mi, s) = local_time();
-    let line = format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}  {msg}");
-    let path = data_dir().join("startup.log");
-    let old = std::fs::read_to_string(&path).unwrap_or_default();
-    let mut lines: Vec<&str> = old.lines().collect();
-    lines.drain(..lines.len().saturating_sub(199));
-    lines.push(&line);
-    // CRLF like the Python's write_text on Windows, so both versions share one tidy log.
-    let nl = if cfg!(windows) { "\r\n" } else { "\n" };
-    let _ = std::fs::write(&path, lines.join(nl) + nl);
+    let line = shared::append_log(msg);
     say!("{line}");
 }
 

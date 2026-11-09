@@ -9,3 +9,7 @@ dpi_restore.json
 
 # Rust build output
 target/
+# sign-in loader copy (cp target/release/set-mouse-startup.exe bin/), run by the scheduled task
+bin/*.exe
+# local backups that name this PC/user (e.g. the scheduled task before px-yefs)
+*.local.xml
