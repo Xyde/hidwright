@@ -14,3 +14,9 @@ tags: [macos]
 
 User 2026-11-08 wants to move between the Windows PC and a Mac Studio. mouse-core's HID layer has a macOS backend (hidapi, shared open) that has never been compiled. On the Mac: install Rust, cargo build, run set-mouse info with the X2A plugged in. Check: interface numbers reported? X2A config interface opens? Then the Viper (Razer feature reports on the mouse interface; razer-macos uses USB control transfers instead, so this may need a different route). Raw-input calibrator on macOS = IOHIDManager (needs Input Monitoring permission). Blocked on: code reaching the Mac (see the remote ticket).
 
+
+## Notes
+
+**2026-11-09T19:04:53Z**
+
+2026-11-09: first macOS compile is green in GitHub Actions (run 42679662164, macos-latest): fmt, clippy -D warnings, unit tests and release build all pass with the hidapi backend. Still untested against real mice on a Mac.
