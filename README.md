@@ -15,7 +15,7 @@ A small, home-made tool for gaming mice, so you don't need the vendor's software
 | Device | What you can do |
 |---|---|
 | **Pulsar X2A** (with its cable) | Swap left/right, remap any button, DPI stages, onboard profiles, polling rate, debounce, ripple control, angle snapping, motion sync: all saved in the mouse. Lift-off: experimental. |
-| **Razer Viper** (with its cable) | Read every setting; temporary DPI for the calibrator. Lighting and saved DPI are coming. |
+| **Razer Viper** (with its cable) | DPI stages, polling rate, logo lighting (static, breathing, spectrum, reactive, off) and brightness: all saved in the mouse (Rust version). Temporary DPI for the calibrator. |
 | **Any mouse + [RawAccel](https://github.com/RawAccelOfficial/rawaccel)** | Its own sensor rotation, measured with a built-in full-screen calibrator |
 | Xtrfy M42, Dumang keyboards | Planned |
 
@@ -61,6 +61,7 @@ set-mouse dpi 800 1600 3200 --active 3
 set-mouse debounce 2            milliseconds
 set-mouse bind thumb1 ctrl+c    remap a button ('default' = factory)
 set-mouse rotation pulsar -1.5  give one mouse its own rotation in RawAccel
+set-mouse razer light static ff8800   Razer: logo colour (also: razer dpi, poll, brightness)
 set-mouse help                  the full list
 ```
 
@@ -70,7 +71,8 @@ Without the PATH step, write `python set_mouse.py` instead of `set-mouse`.
 
 - Pulsar settings are written the same way the official software does it. Factory values are one
   command away (`unswap`, `bind <button> default`, …).
-- Razer: only reads, plus a *temporary* DPI change that the mouse forgets when unplugged.
+- Razer: every command uses the byte layout of the open-source [OpenRazer](https://github.com/openrazer/openrazer)
+  driver and was tried on a real Viper; values are checked before anything is sent.
 - RawAccel: `settings.json` is backed up (timestamped) before every change, and restored if loading fails.
 
 ## For developers

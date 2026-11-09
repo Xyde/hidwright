@@ -19,3 +19,14 @@ User 2026-11-08: 'as thorough as possible'. Cover what Synapse offers for the Vi
 - Firmware update: Synapse-only; out of scope, note it.
 - Portal: show and edit all of it.
 
+
+## Notes
+
+**2026-11-09T20:50:28Z**
+
+2026-11-09: done via px-36ci: lighting (static, breathing x3, spectrum, reactive, off), brightness, saved DPI stages, polling; status shows brightness + device mode. Left:
+- Persistence across a replug can't be tested while Synapse runs (it may re-apply its profile on reconnect): test during the px-23l1 trial (set brightness 60 + temporary DPI 1600, replug, expect 60% and the stage DPI back).
+- Device mode is 03 (driver, set by Synapse). After uninstalling Synapse, set 00 (normal) so the DPI button is handled by the mouse; add `set-mouse razer mode normal` then (00/04 [mode, 0], OpenRazer allows only 00 and 03).
+- Current effect can't be read (no getter in OpenRazer); the portal must remember what it set.
+- Software effects (audio meter, tidal), idle-off, firmware updates: Synapse-only, not hardware; skipped unless the user wants a resident process.
+- Portal UI for all of it: px-01cy.

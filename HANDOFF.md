@@ -5,10 +5,12 @@ _Written 2026-11-09 by Claude (Claude Code desktop session). Replaces the previo
 ## Resume here
 
 - **What this is:** `hidwright`, a self-built, bloat-free replacement for vendor peripheral software. The local folder is still named `pulsar-x2a`. In daily use since 2026-11-09: **`set-mouse` on PATH runs the Rust exe** (`bin\set-mouse.cmd` → `target\release\set-mouse.exe`, Python fallback). Still **Python**: the Mouse Portal (`set-mouse portal` is handed to it), the rotation calibrator inside it, and the sign-in loader. It configures a Pulsar X2A over HID, reads a Razer Viper, and gives each mouse its own RawAccel rotation. A **Rust + egui rewrite** is in progress in `crates/` (epic `px-0oek`). Goals: replace Razer Synapse completely, cover more peripherals (Xtrfy M42, Dumang DK6 keyboard), and run on the user's Mac Studio too.
-- **Where it stands:** Rust reads both mice with output identical to the Python, and fixes the Python's Synapse read collisions. Rust also writes every Pulsar setting (`px-5xrv` part a) and does RawAccel rotation, `reload` and the interrupted-calibration DPI restore (part b), all 2026-11-09: same packets, same messages and byte-identical `settings.json` as the Python, checked on the hardware. Only the portal (and Viper writes beyond temporary DPI) are still Python-only. Both versions now check that each X2A reply echoes its request (the mouse was sometimes read as leftover replies, see Decisions). Public repo with CI green on Windows and macOS. The Pulsar's global settings now survive an unplug (`px-337u`, solved 2026-11-09: writes must carry the active profile byte, not 0). The mouse is at the user's chosen debounce 1 ms / ripple off.
-- **Next action:** `px-yefs` (sign-in loader in Rust) is built and tested: `set-mouse-startup.exe` (windowed program, so no console flashes), copied to `bin\` (git-ignored), same `startup.log` lines as `mouse_startup.py`. **The user** repoints the task (the agent is blocked from changing scheduled tasks), then reboots once; the agent then checks `Get-ScheduledTaskInfo` (result 0) and the new `startup.log` line. The commands, and the rollback from `task-backup-python.local.xml` (project folder, git-ignored, UTF-16), are in `px-yefs`. After that: `px-36ci` (Viper writes, each checked against OpenRazer).
+- **Where it stands:** Rust reads both mice with output identical to the Python, and fixes the Python's Synapse read collisions. Rust also writes every Pulsar setting (`px-5xrv` part a) and does RawAccel rotation, `reload` and the interrupted-calibration DPI restore (part b), all 2026-11-09: same packets, same messages and byte-identical `settings.json` as the Python, checked on the hardware. Rust also controls the Viper fully (`px-36ci`, 2026-11-09: saved DPI stages, polling, logo lighting and brightness, from OpenRazer's byte layouts, round-trip-tested on the mouse). Only the portal is still Python-only. Both versions now check that each X2A reply echoes its request (the mouse was sometimes read as leftover replies, see Decisions). Public repo with CI green on Windows and macOS. The Pulsar's global settings now survive an unplug (`px-337u`, solved 2026-11-09: writes must carry the active profile byte, not 0). The mouse is at the user's chosen debounce 1 ms / ripple off.
+- **Next action:**
+  1. `px-yefs`: the sign-in task already runs the Rust loader (`bin\set-mouse-startup.exe`). After the user's next reboot, check `Get-ScheduledTaskInfo` (LastRunTime = that sign-in, result 0) and the new `startup.log` line, then close the ticket.
+  2. Then the user picks between the **Synapse-free trial** (`px-23l1`; its checklist is in the ticket notes: device mode back to normal, replug persistence test) and the **egui portal** (`px-01cy`, the biggest remaining phase). The agent recommends the trial first: it's the user's stated goal, it's now possible (Rust covers everything Synapse does in hardware), and it settles the open Viper questions before the portal is designed.
 - **Paste into a fresh session:**
-  > Read HANDOFF.md in ~\Documents\pulsar-x2a first. Run `jj st`, `tk ready` and `set-mouse` to confirm the repo, the tickets, the mice and RawAccel still match "Current state", then continue with the next action (px-yefs, the sign-in loader in Rust). Explain what you're doing as you go.
+  > Read HANDOFF.md in ~\Documents\pulsar-x2a first. Run `jj st`, `tk ready` and `set-mouse` to confirm the repo, the tickets, the mice and RawAccel still match "Current state", then continue with the next action (px-yefs reboot check, then ask me: Synapse trial px-23l1 or egui portal px-01cy). Explain what you're doing as you go.
 
 ## Goal and constraints (user's words)
 
@@ -80,7 +82,7 @@ Each item is **verified** (checked 2026-11-09 while writing this; says how) or *
 - Pulsar X2A: profile 1 active, **L/R swapped**, 1000 Hz, **debounce 1 ms**, **ripple off**, angle-snap off, motion-sync off, DPI `[3200]`, lift-off 1 mm (**verified**: `set-mouse` 2026-11-09 after the replug)
 - Pulsar persistence: swap, DPI, debounce 1 ms and ripple off all survived a replug (**verified** 2026-11-09: Windows device arrival 14:15:47, after the write at 14:14:15; then `set-mouse`). Polling, angle-snap and motion-sync use the same write path but weren't replug-tested one by one
 - Pulsar profiles 2-5: never written; factory L/R; profile 2 DPI `400 [800] 1600 3200 6400 12800` (**verified**: Rust vs Python diff for `-p 2` and `-p 5`, 2026-11-08)
-- Razer Viper: firmware v1.04, 1000 Hz, current DPI 3200, stages `400 800 1800 2400 [3200]` (**verified**: Rust `set-mouse`. The Python read failed `polling` this time with "Razer reply ok for 00/85", the known Synapse collision)
+- Razer Viper: firmware v1.04, 1000 Hz, current DPI 3200, stages `400 800 1800 2400 [3200]`, logo brightness 70% (raw 178), logo effect spectrum (as Synapse set it; not readable), **device mode 03 = driver** (set by Synapse) (**verified** 2026-11-09: `set-mouse razer`, after round trips that restored every value)
 - Synapse: running, 9 `RazerAppEngine` processes (**verified**: `Get-Process`); its Viper profile: DPI stages as above, `mappings: []`, lighting `spectrumCycling` brightness 70 (**reported**: from Synapse's logs in `%LOCALAPPDATA%\Razer\RazerAppEngine\User Data\Logs`, 2026-11-08)
 - Xtrfy M42: plugged in (**verified**: `Get-PnpDevice`); not configurable yet
 - RawAccel: profiles `default` -2.6 (Viper and any unlisted device), `Pulsar X2A` -0.5, `Xtrfy M42` 0.0; `devices[]` has the Pulsar and the M42; 3 backups exist (**verified**: read `settings.json`). Driver service `rawaccel` Running (**verified**: `Win32_SystemDriver`)
@@ -102,8 +104,9 @@ Version control: jj, colocated. `main@origin` = `1bec8eda` "CI: Windows + macOS 
 | X2A reply echo | Reads: `[1]` cat, `[2]` reg\|0x80, `[3]` sub (DPI read 0x15 comes back as 0x21), `[6]` profile for per-profile reads (data for firmware/active-profile), `[7]` button id for button reads. Write acks echo the whole packet. The buffer keeps the last reply until the next request is processed | measured 2026-11-09 (`answers()` in `x2a.rs` / `X2A.answers`) |
 | X2A commands (cat/reg/sub) | button `04/01/06` `[btn,type,a1,a2]`; polling `01/09/02` (125:1 250:2 500:4 1000:8); debounce `04/03/03`; angle-snap `07/04/02`; ripple `07/03/02`; motion-sync `07/05/02`; DPI write `05/04/21`; DPI read `05/04/15`; active stage `05/01/02`; LOD `07/02/03`; active profile `02/06/01` (profile in byte 6); firmware `01/07/04`; factory reset `02/05/01` (resets that profile **and all globals**) | same |
 | X2A factory globals | 1000 Hz, debounce 3 ms, angle-snap/ripple/motion-sync **off** | upstream comment "Measured on a cabled X2A (2026-10-13)" |
-| Razer Viper wired | USB `1532:0078`; 90-byte feature report (91 with ID); transaction id `0x1F`; crc = XOR of bytes 2..88 | OpenRazer; `crates/mouse-core/src/viper.rs` |
-| Razer commands | firmware `00/81`, serial `00/82`, polling `00/85`, DPI get `04/85` arg NOSTORE, stages `04/86` arg VARSTORE, DPI set `04/05` size 7 `[NOSTORE, xhi, xlo, yhi, ylo, 0, 0]` | OpenRazer; `razer_viper.py` |
+| Razer Viper wired | USB `1532:0078`; 90-byte feature report (91 with ID); `[0]` status, `[1]` transaction id, `[5]` size, `[6]` class, `[7]` cmd, `[8..88]` args, `[88]` crc = XOR of bytes 2..87. Transaction id: OpenRazer uses `0x3F` for lighting, `0xFF` otherwise; this Viper answers `0x1F`/`0xFF`/`0x3F` alike | OpenRazer `razercommon.h/.c`; `viper.rs` |
+| Razer reads | firmware `00/81`, serial `00/82`, polling `00/85`, device mode `00/84`, DPI `04/85` [NOSTORE], stages `04/86` [VARSTORE] (reply: store, active, count, then 7 bytes per stage, **index 1-based** on this mouse), brightness `0F/84` [VARSTORE, LOGO 0x04] → arg 2 | OpenRazer; measured |
+| Razer writes | stages `04/06` size 0x26 [VARSTORE, active, count, (index, xhi, xlo, yhi, ylo, 0, 0)×n], max 5; polling `00/05` [1000→01, 500→02, 125→08]; brightness `0F/04` [VARSTORE, 0x04, 0-255]; logo effect `0F/02` [VARSTORE, 0x04, effect, …]: off 00 (size 6), static 01 (size 9: `0,0,1,r,g,b`), breathing 02 (random size 6; one colour size 9 `1,0,1,rgb`; two size 0x0C `2,0,2,rgb,rgb`), spectrum 03 (size 6), reactive 05 (size 9 `0,speed 1-4,1,rgb`); device mode `00/04` [00 normal / 03 driver, 0]; temporary DPI `04/05` size 7 [NOSTORE, xhi, xlo, yhi, ylo, 0, 0] (OpenRazer always sends VARSTORE here) | OpenRazer `razerchromacommon.c`, `razermouse_driver.c` |
 | Viper status byte | `0x00` new, `0x01` busy, `0x02` ok, `0x03` failed, `0x04` timeout, `0x05` not supported | `viper.rs` |
 | Viper lighting effects Synapse offers | STATIC, BREATHING, SPECTRUM_CYCLING, REACTIVE, AUDIO_METER, TIDAL; DPI 100-16000 step 50 | Synapse log `connectedDevices` JSON |
 | Xtrfy M42 | USB `2EA8:2203`; `MI_00` mouse (input 8); `MI_01` col01 keyboard, col02 consumer, **col03 vendor page `0xFF00`, 64-byte input + output reports, no feature report** | `HidP_GetCaps` read, 2026-11-08 |
@@ -178,8 +181,7 @@ Sign-in task (PowerShell): `Get-ScheduledTaskInfo -TaskName "Mouse Portal - load
 | Thread | Ticket | Owner | Blocked on |
 |---|---|---|---|
 | Rust port (epic) | `px-0oek` | agent | — |
-| Rust 3: Viper (reads done; temporary DPI and writes left) | `px-36ci` | agent | nothing |
-| Viper full control (lighting, saved DPI, polling, anything else) | `px-w1a0` | agent | `px-36ci` |
+| Viper full control: done except replug persistence, device mode reset, portal UI (see notes) | `px-w1a0` | agent | `px-23l1` trial, `px-01cy` |
 | Rust 4: sign-in loader in Rust | `px-yefs` | agent | `px-5xrv` |
 | Rust 5: egui portal | `px-01cy` | agent | `px-5xrv`, `px-36ci` |
 | Rust 6: egui calibrator | `px-xpnz` | agent | `px-01cy` |
@@ -202,7 +204,7 @@ Sign-in task (PowerShell): `Get-ScheduledTaskInfo -TaskName "Mouse Portal - load
 
 - **When the X2A answers late** (the leftover-reply problem): seen in bursts on 2026-11-09 (~14:44-14:50 and again later), never in 400 idle back-to-back reads. Guess, untested: slower while the mouse is moved or clicked. The echo check handles it either way; to test, run a read loop while moving the mouse.
 - **Viper without Synapse:** does the logo keep spectrum cycling (Razer's factory default) and at what brightness? Check with the `px-23l1` trial.
-- **What else the Viper supports** (onboard remapping? lift-off?): check OpenRazer before `px-w1a0`.
+- **Viper NOSTORE temporary DPI:** is it really forgotten on replug? OpenRazer never sends NOSTORE for a DPI set. Test in the `px-23l1` trial (Synapse may re-apply its profile on reconnect, so not before).
 - **macOS with real mice:** does macOS report interface numbers? Can we send feature reports to the Viper's mouse interface without exclusive access? (`px-e6p0`)
 - **Dumang:** one USB device shows up; what the board `ID` and `layer_info` mean on a DK6; momentary vs latched behaviour (`px-k3jg`).
 - **M42 protocol:** unknown; no public work found.
@@ -214,7 +216,7 @@ Sign-in task (PowerShell): `Get-ScheduledTaskInfo -TaskName "Mouse Portal - load
 - Don't use Windows' "Primary mouse button" swap (it swaps every mouse).
 - Don't install or recommend Pulsar Fusion or Synapse as the solution. The *only* considered exception is a temporary Fusion install for a USB capture, and only with the user's OK. Never use Fusion's "reset to defaults".
 - Don't uninstall Synapse or its drivers before the user's trial (`px-23l1`). Don't uninstall the RawAccel driver or delete `writer.exe`, `wrapper.dll`, `Newtonsoft.Json.dll`. Don't delete `_retired-gui`.
-- Don't write to the Viper with STORE/VARSTORE until each command is checked against OpenRazer (`px-w1a0`).
+- Don't add a Viper write without checking it against OpenRazer's source first (every current one is, see Specs). Don't set device mode 02 (OpenRazer blocks it).
 - Don't copy code from `dumang-keyboard-ctrl` (GPL-3.0); reimplement from the packet format.
 - Don't switch the sign-in task to Rust before `px-yefs` is verified; don't send `portal` to the Rust exe before `px-01cy`; don't delete the Python before `px-t5i3` (it's also the shim's fallback).
 - Don't hand-edit `settings.json` `profiles[0]` thinking it's the Pulsar's (it's `default`). Use `set-mouse rotation` or `rawaccel_cfg.apply` (they back up first).
@@ -228,7 +230,7 @@ Sign-in task (PowerShell): `Get-ScheduledTaskInfo -TaskName "Mouse Portal - load
 - `Cargo.toml`: workspace (`crates/mouse-core`, `crates/set-mouse`), release profile.
 - `crates/mouse-core/src/hid/`: `mod.rs` (shared `Interface`, report-ID helper), `windows.rs` (SetupAPI + hid.dll), `macos.rs` (hidapi).
 - `crates/mouse-core/src/x2a.rs`: Pulsar reads (`Snapshot`) and writes (`Setting` enum + `X2a::write`, which picks the profile byte: active profile for globals), `Binding::parse`, tests vs Python vectors.
-- `crates/mouse-core/src/viper.rs`: Viper reads, temporary DPI (NOSTORE), collision retry, tests vs Python vectors.
+- `crates/mouse-core/src/viper.rs`: Viper reads, writes (`Setting`, `Logo`, `Rgb`), temporary DPI (NOSTORE), collision retry; tests vs Python vectors, OpenRazer layouts and bytes measured on the mouse.
 - `crates/mouse-core/src/rawaccel.rs`: RawAccel `settings.json` (find, resolve, plan, apply, `writer.exe`, reload). Test fixtures in `crates/mouse-core/tests/fixtures/rawaccel/` (made by `rawaccel_cfg.plan`).
 - `crates/mouse-core/src/rawinput.rs`: plugged-in mice under RawAccel's ids. `dpi_restore.rs`: undo an interrupted calibration.
 - `crates/set-mouse/src/main.rs`: Rust CLI: everything `set-mouse help` lists except `portal`. Input is checked before the mouse is opened; `say!` instead of `println!` (no panic when piped into `head`).

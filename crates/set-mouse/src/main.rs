@@ -40,7 +40,16 @@ const USAGE: &str = "\
 set-mouse (Rust, port in progress)
 
   set-mouse                       status of everything (Pulsar, Razer, RawAccel rotation)
-  set-mouse razer                 Razer Viper settings (read-only)
+  set-mouse razer                 Razer Viper settings
+
+  Razer Viper (saved in the mouse itself):
+  set-mouse razer dpi 400 800 1600 --active 2   DPI stages (1-5, 100-16000, step 50)
+  set-mouse razer stage 2         switch DPI stage
+  set-mouse razer poll 1000       125 500 1000
+  set-mouse razer brightness 70   logo brightness in %
+  set-mouse razer light static ff0000
+                                  also: off, spectrum, breath [colour [colour]],
+                                  reactive colour [speed 1-4]
 
   Pulsar X2A (saved in the mouse itself):
   set-mouse info                  all Pulsar settings
@@ -124,7 +133,10 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         Some("info") => pulsar_info(parse_profile(&args[1..])?),
         Some(c) if PULSAR_WRITES.contains(&c) => pulsar_write(c, &args[1..]),
-        Some("razer" | "viper") => razer_info(),
+        Some("razer" | "viper") => match args.get(1) {
+            None => razer_info(),
+            Some(what) => razer_write(&what.to_lowercase(), &args[2..]),
+        },
         Some("rotation") => match &args[1..] {
             [] => show_rotation(),
             [who, deg] => set_rotation(who, deg),
@@ -484,7 +496,126 @@ fn razer_info() -> Result<(), String> {
     Ok(())
 }
 
-/// Same layout as `python razer_viper.py`, line for line.
+/// `set-mouse razer <what> ...`: change a Viper setting (saved in the mouse), then read it back.
+fn razer_write(what: &str, rest: &[String]) -> Result<(), String> {
+    use viper::{Logo, Rgb, Setting as V};
+    let e = |e: mouse_core::Error| e.to_string();
+    let usage = |u: &str| format!("usage: set-mouse razer {u}");
+    let num = |t: &str, what: &str| -> Result<u16, String> { number(t, what) };
+    let colour = |t: &String| Rgb::parse(t).map_err(e);
+    // Work out (and check) the setting before opening the mouse.
+    let (setting, stage) = match what {
+        "dpi" => {
+            let mut dpis = Vec::new();
+            let mut active = 1u8;
+            let mut it = rest.iter();
+            while let Some(a) = it.next() {
+                if let Some(v) = a.strip_prefix("--active") {
+                    let v = match v.strip_prefix('=') {
+                        Some(v) => v.to_string(),
+                        None => it.next().cloned().ok_or("--active needs a number")?,
+                    };
+                    active = number(&v, "--active")?;
+                } else {
+                    dpis.push(num(a, "DPI")?);
+                }
+            }
+            (Some(V::DpiStages { dpis, active }), None)
+        }
+        "stage" => match rest {
+            [n] => (None, Some(number::<u8>(n, "stage")?)),
+            _ => return Err(usage("stage 1-5")),
+        },
+        "poll" => match rest {
+            [hz] => (Some(V::Polling(number(hz, "polling rate")?)), None),
+            _ => return Err(usage("poll 125|500|1000")),
+        },
+        "brightness" => match rest {
+            [p] => {
+                let p: u8 = number(p.trim_end_matches('%'), "brightness")?;
+                if p > 100 {
+                    return Err("brightness is 0-100 (%)".into());
+                }
+                (Some(V::Brightness(viper::brightness_raw(p))), None)
+            }
+            _ => return Err(usage("brightness 0-100")),
+        },
+        "light" => {
+            let logo = match rest {
+                [m] if m == "off" => Logo::Off,
+                [m] if m == "spectrum" => Logo::Spectrum,
+                [m, c] if m == "static" => Logo::Static(colour(c)?),
+                [m] if m == "breath" => Logo::BreathRandom,
+                [m, c] if m == "breath" => Logo::BreathSingle(colour(c)?),
+                [m, c1, c2] if m == "breath" => Logo::BreathDual(colour(c1)?, colour(c2)?),
+                [m, c] if m == "reactive" => Logo::Reactive(2, colour(c)?),
+                [m, c, s] if m == "reactive" => {
+                    Logo::Reactive(number(s, "reactive speed")?, colour(c)?)
+                }
+                _ => {
+                    return Err(usage(
+                        "light off | spectrum | static RRGGBB | breath [RRGGBB [RRGGBB]] \
+                         | reactive RRGGBB [speed 1-4]",
+                    ));
+                }
+            };
+            (Some(V::Logo(logo)), None)
+        }
+        _ => {
+            return Err(format!(
+                "unknown: set-mouse razer {what}. Try: set-mouse help"
+            ));
+        }
+    };
+    if let Some(s) = &setting {
+        s.request().map_err(e)?;
+    }
+    let v = Viper::open().map_err(e)?;
+    let setting = match (setting, stage) {
+        (Some(s), _) => s,
+        // Switching stage = saving the same stages with another one active.
+        (None, Some(n)) => {
+            let (_, stages) = v.dpi_stages().map_err(e)?;
+            V::DpiStages {
+                dpis: stages.iter().map(|(x, _)| *x).collect(),
+                active: n,
+            }
+        }
+        (None, None) => unreachable!(),
+    };
+    setting.request().map_err(e)?;
+    v.write(&setting).map_err(e)?;
+    match &setting {
+        V::DpiStages { .. } => {
+            let (act, stages) = v.dpi_stages().map_err(e)?;
+            let xs: Vec<String> = stages.iter().map(|(x, _)| x.to_string()).collect();
+            if stage.is_some() {
+                say!("Razer Viper: active DPI stage now {act}");
+            } else {
+                say!(
+                    "Razer Viper: DPI stages [{}], active stage {act}",
+                    xs.join(", ")
+                );
+            }
+        }
+        V::Polling(_) => {
+            let hz = viper::polling_hz(v.polling_code().map_err(e)?);
+            say!(
+                "Razer Viper: polling rate now {} Hz",
+                hz.map_or("?".into(), |h| h.to_string())
+            );
+        }
+        V::Brightness(_) => say!(
+            "Razer Viper: logo brightness now {}%",
+            viper::brightness_percent(v.brightness().map_err(e)?)
+        ),
+        // The mouse can't report its effect, so say what was saved.
+        V::Logo(logo) => say!("Razer Viper: logo light set to {}", logo.describe()),
+    }
+    Ok(())
+}
+
+/// Layout of `python razer_viper.py`, plus brightness and device mode.
 fn format_razer(s: &viper::Info) -> String {
     let none = || "None".to_string();
     let mut out = format!(
@@ -522,6 +653,20 @@ fn format_razer(s: &viper::Info) -> String {
             "  DPI stages     {}   ([] = active stage {active})\n",
             list.join("  ")
         );
+    }
+    if let Some(b) = s.brightness {
+        out += &format!(
+            "  logo light     {}% brightness\n",
+            viper::brightness_percent(b)
+        );
+    }
+    if let Some(m) = s.device_mode {
+        let name = match m {
+            0x00 => "normal".to_string(),
+            0x03 => "driver (Synapse sets this)".to_string(),
+            m => format!("0x{m:02x}"),
+        };
+        out += &format!("  device mode    {name}\n");
     }
     for (field, err) in &s.errors {
         out += &format!("  ({field}: {err})\n");
