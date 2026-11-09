@@ -248,18 +248,25 @@ class X2A:
         self.cmd(0x02, 0x06, 0x01, p)
 
     # ---- global settings
+    # The mouse keeps one copy of each global, but the profile byte of a WRITE
+    # decides whether it is saved: 0 = RAM only (lost on unplug), 1-5 = saved
+    # to flash. So writes carry the active profile; reads may use 0.
+    # (px-337u experiment 1, 2026-11-09: 1 ms / ripple off survived a replug.)
+    def cmd_global(self, cat, reg, sub, payload):
+        return self.cmd(cat, reg, sub, self.active_profile(), payload)
+
     def polling(self):
         v = self.read(0x01, 0x09, 0x02, 0)[7]
         return POLL_CODE_TO_HZ.get(v, v * 125)
 
     def set_polling(self, hz):
-        self.cmd(0x01, 0x09, 0x02, 0, [POLL_HZ_TO_CODE[hz]])
+        self.cmd_global(0x01, 0x09, 0x02, [POLL_HZ_TO_CODE[hz]])
 
     def debounce(self):
         return self.read(0x04, 0x03, 0x03, 0)[7]
 
     def set_debounce(self, ms):
-        self.cmd(0x04, 0x03, 0x03, 0, [ms])
+        self.cmd_global(0x04, 0x03, 0x03, [ms])
 
     TOGGLES = {"angle-snap": 0x04, "ripple": 0x03, "motion-sync": 0x05}
 
@@ -267,7 +274,7 @@ class X2A:
         return bool(self.read(0x07, self.TOGGLES[name], 0x02, 0)[7])
 
     def set_toggle(self, name, on):
-        self.cmd(0x07, self.TOGGLES[name], 0x02, 0, [1 if on else 0])
+        self.cmd_global(0x07, self.TOGGLES[name], 0x02, [1 if on else 0])
 
     # ---- per-profile settings
     def dpi_stages(self, profile):

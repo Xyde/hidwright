@@ -5,15 +5,10 @@ _Written 2026-11-09 by Claude (Claude Code desktop session). Replaces the previo
 ## Resume here
 
 - **What this is:** `hidwright`, a self-built, bloat-free replacement for vendor peripheral software. The local folder is still named `pulsar-x2a`. The **Python version is what's in daily use**: `set-mouse` on PATH, the Mouse Portal, the rotation calibrator and the sign-in loader. It configures a Pulsar X2A over HID, reads a Razer Viper, and gives each mouse its own RawAccel rotation. A **Rust + egui rewrite** is in progress in `crates/` (epic `px-0oek`). Goals: replace Razer Synapse completely, cover more peripherals (Xtrfy M42, Dumang DK6 keyboard), and run on the user's Mac Studio too.
-- **Where it stands:** Rust reads both mice with output identical to the Python, and fixes the Python's Synapse read collisions. All writes are still Python-only. Public repo with CI green on Windows and macOS. **Open problem:** the Pulsar's global settings (debounce, ripple, etc.) don't survive an unplug. Right now the mouse is at debounce **3 ms** and ripple **on**, not the user's chosen 1 ms / off (`px-337u`).
-- **Next action (agent):** Rust phase 2 (`px-5xrv`), starting with the persistence experiments in `px-337u`.
-  - Experiment 1: write debounce 1 and ripple off with the **profile byte set to the active profile (1)** instead of 0.
-  - Ask the user to unplug the Pulsar's cable for about 5 s and plug it back in.
-  - Read back with `set-mouse`. **It worked if** it still shows `debounce 1 ms` and `ripple off`.
-  - If not, try experiment 2 (re-select the active profile after writing), then 3 (USB capture of Pulsar Fusion, which needs the user's OK to install it temporarily).
-  - Then port the X2A writes, then RawAccel config, then switch `bin/set-mouse.cmd` to the Rust exe once it matches.
+- **Where it stands:** Rust reads both mice with output identical to the Python, and fixes the Python's Synapse read collisions. All writes are still Python-only. Public repo with CI green on Windows and macOS. The Pulsar's global settings now survive an unplug (`px-337u`, solved 2026-11-09: writes must carry the active profile byte, not 0). The mouse is at the user's chosen debounce 1 ms / ripple off.
+- **Next action (agent):** Rust phase 2 (`px-5xrv`): port the X2A writes (globals with the **active profile byte**, see `X2A.cmd_global` in `pulsar_x2a.py`), then RawAccel config, then switch `bin/set-mouse.cmd` to the Rust exe once it matches.
 - **Paste into a fresh session:**
-  > Read HANDOFF.md in ~\Documents\pulsar-x2a first. Run `jj st`, `tk ready` and `set-mouse` to confirm the repo, the tickets, the mice and RawAccel still match "Current state", then continue with the next action (px-337u experiment 1, then Rust phase 2 px-5xrv). Explain what you're doing as you go.
+  > Read HANDOFF.md in ~\Documents\pulsar-x2a first. Run `jj st`, `tk ready` and `set-mouse` to confirm the repo, the tickets, the mice and RawAccel still match "Current state", then continue with the next action (Rust phase 2, px-5xrv). Explain what you're doing as you go.
 
 ## Goal and constraints (user's words)
 
@@ -66,7 +61,7 @@ This session (2026-11-08/09):
 - **Was:** "RawAccel has no per-mouse profiles". **Now:** per-mouse profiles via `devices[]`. **Because:** the driver source supports it.
 - **Was:** I recommended **Tauri** for the UI. **Now:** **egui**. **Because:** the user chose the smallest footprint. Traces: none in code.
 - **Was:** HID through the `hidapi` crate on both OSes (and before that, the `windows` crate). **Now:** `windows-sys` on Windows, `hidapi` on macOS. **Because:** start-up cost and missing report-size info (see Decisions). **Stale trace:** the description of ticket `px-0oek` still says "'windows' crate (Microsoft's bindings …)". The notes are correct; trust the code.
-- **Was:** the handoff of 2026-11-06 said the Pulsar is at debounce 1 ms / ripple off. **Now:** those are lost on every power loss; currently 3 ms / on. **Because:** our writes with profile byte 0 seem to reach RAM only. The mouse reloads an older *saved* state; factory per upstream is ripple **off**, so ripple **on** is a saved value.
+- **Was:** global writes (polling, debounce, toggles) used profile byte 0, as upstream does, and were lost on every power loss (the mouse reloaded an older saved 3 ms / ripple on). **Now:** writes send the active profile byte and are saved. **Because:** `px-337u` experiment 1 (2026-11-09): profile byte 0 = RAM only, 1-5 = saved to flash; reads return the same single copy for any byte.
 - **Was:** first guess that the 2026-11-07 reboot "reset globals to factory". **Now:** see above (not factory; an older saved state).
 - **Was:** the RawAccel path was hard-coded in `rawaccel_cfg.py`. **Now:** `find_dir()` searches `~\Downloads`, `~\Desktop`, `~\Documents` and Program Files for `RawAccel*` (newest first); env `RAWACCEL_DIR` overrides.
 - **Was:** Synapse wasn't mentioned in the old handoff (assumed absent). **Now:** Synapse 4.0.896 is installed (since 2026-04) and running (9 `RazerAppEngine` processes); goal: remove it after a trial.
@@ -75,8 +70,8 @@ This session (2026-11-08/09):
 
 Each item is **verified** (checked 2026-11-09 while writing this; says how) or **reported** (from the session, not re-checked).
 
-- Pulsar X2A: profile 1 active, **L/R swapped**, 1000 Hz, **debounce 3 ms**, **ripple on**, angle-snap off, motion-sync off, DPI `[3200]`, lift-off 1 mm (**verified**: `python set_mouse.py` and `target\release\set-mouse.exe`, identical)
-- Pulsar persistence: swap and DPI (profile 1) survive an unplug; debounce/ripple written with profile 0 do not (**reported**: user replugged 2026-11-08, then `set-mouse` showed 3 ms / on)
+- Pulsar X2A: profile 1 active, **L/R swapped**, 1000 Hz, **debounce 1 ms**, **ripple off**, angle-snap off, motion-sync off, DPI `[3200]`, lift-off 1 mm (**verified**: `set-mouse` 2026-11-09 after the replug)
+- Pulsar persistence: swap, DPI, debounce 1 ms and ripple off all survived a replug (**verified** 2026-11-09: Windows device arrival 14:15:47, after the write at 14:14:15; then `set-mouse`). Polling, angle-snap and motion-sync use the same write path but weren't replug-tested one by one
 - Pulsar profiles 2-5: never written; factory L/R; profile 2 DPI `400 [800] 1600 3200 6400 12800` (**verified**: Rust vs Python diff for `-p 2` and `-p 5`, 2026-11-08)
 - Razer Viper: firmware v1.04, 1000 Hz, current DPI 3200, stages `400 800 1800 2400 [3200]` (**verified**: Rust `set-mouse`. The Python read failed `polling` this time with "Razer reply ok for 00/85", the known Synapse collision)
 - Synapse: running, 9 `RazerAppEngine` processes (**verified**: `Get-Process`); its Viper profile: DPI stages as above, `mappings: []`, lighting `spectrumCycling` brightness 70 (**reported**: from Synapse's logs in `%LOCALAPPDATA%\Razer\RazerAppEngine\User Data\Logs`, 2026-11-08)
@@ -94,7 +89,7 @@ Version control: jj, colocated. `main` = `1bec8eda` "CI: Windows + macOS build/t
 | Thing | Value | Source |
 |---|---|---|
 | Pulsar X2A wired | USB `3710:1404`, config on interface `MI_03` (vendor page), feature report ID 0, 64 bytes (65 with ID) | `pulsar_x2a.py`; `crates/mouse-core/src/x2a.rs` |
-| X2A packet | `[1]` cat, `[2]` reg (bit7 = read), `[3]` sub, `[6]` profile (0 = global, 1-5), `[7..62]` payload, `[62..64]` LE u16 of `sum(bytes[0..62])` | upstream `packerlschupfer/pulsar-mouse-linux` `src/pulsar_mouse/drivers/x2a.py` (MIT) |
+| X2A packet | `[1]` cat, `[2]` reg (bit7 = read), `[3]` sub, `[6]` profile (0 = global, 1-5; **global writes need the active profile here to be saved**, 0 = RAM only), `[7..62]` payload, `[62..64]` LE u16 of `sum(bytes[0..62])` | upstream `packerlschupfer/pulsar-mouse-linux` `src/pulsar_mouse/drivers/x2a.py` (MIT) |
 | X2A reply byte 0 | `0x00` not answered, `0x01` answered, `0x02` pending (OK for writes), `0x03` refused | same |
 | X2A commands (cat/reg/sub) | button `04/01/06` `[btn,type,a1,a2]`; polling `01/09/02` (125:1 250:2 500:4 1000:8); debounce `04/03/03`; angle-snap `07/04/02`; ripple `07/03/02`; motion-sync `07/05/02`; DPI write `05/04/21`; DPI read `05/04/15`; active stage `05/01/02`; LOD `07/02/03`; active profile `02/06/01` (profile in byte 6); firmware `01/07/04`; factory reset `02/05/01` (resets that profile **and all globals**) | same |
 | X2A factory globals | 1000 Hz, debounce 3 ms, angle-snap/ripple/motion-sync **off** | upstream comment "Measured on a cabled X2A (2026-10-13)" |
@@ -170,7 +165,6 @@ Sign-in task (PowerShell): `Get-ScheduledTaskInfo -TaskName "Mouse Portal - load
 | Thread | Ticket | Owner | Blocked on |
 |---|---|---|---|
 | Rust port (epic) | `px-0oek` | agent | — |
-| Pulsar globals don't persist: experiments 1-3 | `px-337u` | agent (user replugs) | nothing |
 | Rust 2: X2A writes + RawAccel cfg + CLI parity, then switch the PATH shim | `px-5xrv` | agent | nothing |
 | Rust 3: Viper (reads done; temporary DPI and writes left) | `px-36ci` | agent | nothing |
 | Viper full control (lighting, saved DPI, polling, anything else) | `px-w1a0` | agent | `px-36ci` |
@@ -193,7 +187,6 @@ Sign-in task (PowerShell): `Get-ScheduledTaskInfo -TaskName "Mouse Portal - load
 
 ## Unknowns and unverified
 
-- **How the X2A saves global settings.** Profile-0 writes are lost on power loss. Untested: profile byte = active profile; re-selecting the profile; a separate save command (would need a USB capture of Pulsar Fusion).
 - **Viper without Synapse:** does the logo keep spectrum cycling (Razer's factory default) and at what brightness? Check with the `px-23l1` trial.
 - **What else the Viper supports** (onboard remapping? lift-off?): check OpenRazer before `px-w1a0`.
 - **macOS with real mice:** does macOS report interface numbers? Can we send feature reports to the Viper's mouse interface without exclusive access? (`px-e6p0`)

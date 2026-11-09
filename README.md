@@ -14,7 +14,7 @@ A small, home-made tool for gaming mice, so you don't need the vendor's software
 
 | Device | What you can do |
 |---|---|
-| **Pulsar X2A** (with its cable) | Swap left/right, remap any button, DPI stages, onboard profiles: saved in the mouse. Polling rate, debounce, ripple control, angle snapping, motion sync: they work, but **currently reset when the mouse is unplugged** (being fixed). Lift-off: experimental. |
+| **Pulsar X2A** (with its cable) | Swap left/right, remap any button, DPI stages, onboard profiles, polling rate, debounce, ripple control, angle snapping, motion sync: all saved in the mouse. Lift-off: experimental. |
 | **Razer Viper** (with its cable) | Read every setting; temporary DPI for the calibrator. Lighting and saved DPI are coming. |
 | **Any mouse + [RawAccel](https://github.com/RawAccelOfficial/rawaccel)** | Its own sensor rotation, measured with a built-in full-screen calibrator |
 | Xtrfy M42, Dumang keyboards | Planned |
