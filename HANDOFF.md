@@ -1,17 +1,16 @@
 # Handoff: hidwright (set-mouse, Mouse Portal, Rust port)
 
-_Written 2026-11-09 ~19:00 by Claude (Claude Code desktop session). Replaces the previous HANDOFF.md (history is in jj). This file is **public** (github.com/Xyde/hidwright): paths use `~` for the user's home folder, and it contains no names, serials or PC names. Keep it that way._
+_Written 2026-11-09 ~19:00 by Claude (Claude Code desktop session); updated ~20:30 after the Viper button fix (px-fmim decided; px-oqc3 and px-31s4 closed). Replaces the previous HANDOFF.md (history is in jj). This file is **public** (github.com/Xyde/hidwright): paths use `~` for the user's home folder, and it contains no names, serials or PC names. Keep it that way._
 
 ## Resume here
 
 - **What this is:** `hidwright`, a self-built, bloat-free replacement for vendor peripheral software (local folder still named `pulsar-x2a`). `set-mouse` on PATH runs the **Rust** exe (`bin\set-mouse.cmd` → `target\release\set-mouse.exe`, Python fallback). The sign-in loader is Rust too (`bin\set-mouse-startup.exe`). Still Python: the Mouse Portal (`set-mouse portal`) and its rotation calibrator. It configures a Pulsar X2A and a Razer Viper over HID and gives each mouse its own RawAccel rotation. Being ported to Rust + egui in `crates/` (epic `px-0oek`). Goals: no vendor software at all, more peripherals (Xtrfy M42, Dumang DK6), and the user's Mac Studio too.
-- **Where it stands:** Rust does everything the Python CLI did, plus full Viper control (DPI stages, polling, logo lighting, brightness). **Razer Synapse is completely removed** (`px-23l1`, closed): no app, service, driver or ghost device entry is left, and the Viper runs on Microsoft drivers only. **One problem remains on the Viper:** its own memory has 3 side buttons set to type keys (Enter, Right arrow, Left arrow) and the DPI button set to "Hypershift", so the DPI button never changes DPI (`px-oqc3`). The user chose the target: **factory defaults**. How to get there is the user's open decision (`px-fmim`).
+- **Where it stands:** Rust does everything the Python CLI did, plus full Viper control (DPI stages, polling, logo lighting, brightness). **Razer Synapse is completely removed** (`px-23l1`, closed): no app, service, driver or ghost device entry is left, and the Viper runs on Microsoft drivers only. **Viper buttons fixed (2026-11-09 ~20:00):** its memory had 3 side buttons typing keys (Enter, Right arrow, Left arrow) and the DPI button on "Hypershift". The user chose **direct writes** (`px-fmim`, option B) and factory defaults; all buttons now read factory, the DPI button cycles the 5 stages, the side buttons send back/forward and no keys. `set-mouse razer` lists the buttons; `set-mouse razer bind BUTTON FUNCTION` changes one (Rust). Confirmed after an unplug (persists) and by pressing all four side buttons (`px-31s4`, closed).
 - **Next action:**
-  1. **Ask the user** to decide `px-fmim`: (A) Synapse 3 from the offline-setups mirror + a USB capture, so Razer itself writes the buttons and we record the exact bytes; or (B) write the 4 buttons directly (`px-oqc3`; command layout from razerqdhid's source code, confirmed by every read from this Viper). The agent leans to B (faster, well-founded); A is the purist route the user asked about.
-  2. Then do it. For B: rewrite button `06` with its own value first, then one button at a time: write, read back with `02/8C`, the user presses it once in **Notepad focused with the Pulsar** (the Viper's side buttons type keys). Done when all four read back as `back`/`forward`/`DPI next` and behave that way.
-  3. The user also decides `px-ut0y` (keep or remove USBPcap) and pushes (`px-cfcv`).
+  1. The user decides `px-ut0y` (keep or remove USBPcap) and pushes (`px-cfcv`; the local changes now include the button work, change `vxkspqpq`).
+  2. Continue with `px-01cy` (egui portal) or `px-j08w`. `px-5juk` (which id 04-07 is on which side) only if the user wants different functions per side.
 - **Paste into a fresh session:**
-  > Read HANDOFF.md in ~\Documents\pulsar-x2a first. Run `jj st`, `tk ready` and `set-mouse` to confirm the repo, the tickets, the mice and RawAccel still match "Current state". Then ask me to decide px-fmim (Synapse 3 capture or direct button writes) and continue with the Viper button fix. Explain what you're doing as you go, in short, plain sentences.
+  > Read HANDOFF.md in ~\Documents\pulsar-x2a first. Run `jj st`, `tk ready` and `set-mouse` to confirm the repo, the tickets, the mice and RawAccel still match "Current state". Then continue from "Next action". Explain what you're doing as you go, in short, plain sentences.
 
 ## Goal and constraints (user's words)
 
@@ -58,6 +57,8 @@ This session (2026-11-09):
 | **Remove Synapse completely**, incl. its drivers (`px-23l1`) | "Synapse off, drivers kept" broke the Viper (Code 10); the Razer driver `RzDev_0078` sat as a filter in the Viper's input path | Keep Synapse; keep its drivers | 2026-11-09 |
 | Find the button bytes by **USB capture of Razer's own software**, not by decompiling Synapse | Exact bytes for this Viper; decompiling = days of work and a licence problem for a public repo | Ghidra/ReVa on Synapse | 2026-11-09 |
 | Button target: **factory defaults** | User's choice | Right-side buttons disabled; custom | 2026-11-09 |
+| Fix the buttons by **direct writes** (`px-fmim` B); press tests in our own topmost window, no Notepad | Fewest manual steps for the user; the mouse's read-back is ground truth too; nothing installed | Synapse 3 + USB capture (A) | 2026-11-09 |
+| `bind` offers only functions read from or tested on this Viper (mouse buttons, dpi-cycle, default) | Repo rule: every write checked on the real mouse | Keys, `disabled`, razerqdhid's full list | 2026-11-09 |
 | Gemini's uninstall scripts kept on disk but **out of the repo** (`.gitignore`, scrubbed from unpushed history) | They contain this PC's user path; repo is public | Committing them | 2026-11-09 |
 | Rust lists the Xtrfy M42 in `rotation` (`m42`, `xtrfy`) | It has its own RawAccel profile | Python parity | 2026-11-09 |
 
@@ -76,7 +77,7 @@ Each item is **verified** (checked 2026-11-09 18:30-19:00; says how) or **report
 
 - Pulsar X2A: profile 1, **L/R swapped**, 1000 Hz, debounce 1 ms, ripple off, angle-snap off, motion-sync off, DPI `[3200]`, lift-off 1 mm; settings survived a full reboot (**verified**: `set-mouse`, boot 17:34)
 - Razer Viper: firmware v1.04, 1000 Hz, current DPI 3200, stages `400 800 1800 2400 [3200]`, logo 70% brightness, spectrum effect kept without Synapse, device mode **normal** (**verified**: `set-mouse razer`; effect reported by the user)
-- Viper button table (profile 1, normal layer): `01` left, `02` right, `03` middle, **`04` key Enter**, **`05` key Right arrow**, `06` mouse back, **`07` key Left arrow**, **`0e` Hypershift**, `09`/`0a` wheel (**verified**: `02/8C` reads, script `~\AppData\Local\Temp\hidwright-diag\viper_buttons_all.py`). Hypershift layer: `04` back, `05` forward, `06` back, `07` forward. Which physical side is which ID: not yet known
+- Viper button table (profile 1, normal layer): all **factory**: `01` left, `02` right, `03` middle, `04` back, `05` forward, `06` back, `07` forward, `0e` dpi-cycle, `09`/`0a` wheel (**verified**: `set-mouse razer`, 2026-11-09 ~20:00). Was: `04` Enter, `05` Right arrow, `07` Left arrow, `0e` Hypershift (backup: `~\AppData\Local\Temp\hidwright-diag\viper_buttons_backup.json`; `viper_buttons_write.py --restore` writes it back). Hypershift layer: `04` back, `05` forward, `06` back, `07` forward. Press test (**verified**, Raw Input): DPI button cycles all 5 stages with wrap; front = forward and back = back on **both** sides (a first 'right front = back' was a left button pressed by mistake, user confirmed). Survives an unplug of 5 s (**verified**: `set-mouse razer` after replug). Which id is on which side: unknown (`px-5juk`)
 - Razer software: none. No process, service, driver, `RzCommon.sys`/`RzDev_0078.sys`, driver package or ghost Viper node (**verified**: `Get-Process`, `Win32_Service`, `pnputil /enum-drivers`, `Get-PnpDevice`). Mouse class filters `rawaccel,mouclass`
 - USBPcap 1.5.4.0: installed, idle; USB class upper filter `USBPcap` (**verified**). Decision `px-ut0y`
 - Xtrfy M42: plugged in (**verified**); not configurable yet
@@ -85,7 +86,7 @@ Each item is **verified** (checked 2026-11-09 18:30-19:00; says how) or **report
 - `set-mouse` on PATH = Rust exe; portal not running; no `dpi_restore.json`; user PATH has the project `bin` (**verified**)
 - Leftovers outside the repo: capture files and scripts in `~\AppData\Local\Temp\hidwright-diag\`; Razer installers in Downloads (`px-c0lr`). Git-ignored in the repo folder: `uninstall_official_razer.cmd`/`.ps1` (another tool's scripts) (**verified**: listing)
 
-Version control: jj, colocated. `main` = `main@origin` = `umuyrvut` (pushed by the user). Local, not pushed: `rmvxlwpw` (Synapse removed), `lyyzwpwo` (replug result), and the handoff change on top (this file, tickets, `.gitignore`). Unpushed diff scanned: 0 personal-data hits. Tests: `cargo test` → **31 passed**; clippy 0 problems; fmt ok (**verified**). CI on the last push: success (`42701312644`). Exes: `set-mouse.exe` 529,408 bytes, `set-mouse-startup.exe` 331,264 bytes (copy in `bin\` identical size).
+Version control: jj, colocated. `main` = `main@origin` = `umuyrvut` (pushed by the user). Local, not pushed: `rmvxlwpw` (Synapse removed), `lyyzwpwo` (replug result), and the handoff change on top (this file, tickets, `.gitignore`). Unpushed diff scanned: 0 personal-data hits. Tests: `cargo test` → **34 passed** (after the button work, ~20:00); clippy 0 problems; fmt ok (**verified**). CI on the last push: success (`42701312644`). Exes: `set-mouse.exe` 529,408 bytes, `set-mouse-startup.exe` 331,264 bytes (copy in `bin\` identical size).
 
 ## Specs and reference values
 
@@ -138,7 +139,7 @@ Test vectors: a throwaway Python script calls the Python packet builders and pri
 ## Environment and gotchas
 
 - **Public repo.** No user name, PC name, email or serials in tracked files or commit messages. Other tools (Gemini) and other Claude sessions also write into this folder; jj snapshots **every new file**, so check `jj st` and scan `jj diff --from main@origin --to @ --git` before describing or pushing.
-- **The Viper's side buttons type keys** (Enter, arrows). Before the user presses a Viper button, have them click into **Notepad with the Pulsar**. One press once disrupted the Claude window.
+- **Viper press tests:** the side buttons no longer type keys. Don't send the user to Notepad (they asked to avoid it): run `python ~\AppData\Local\Temp\hidwright-diag\viper_press_guided.py ["RIGHT side, FRONT button" ...]`, a topmost window that names each button and shows what it sent. Mouse button messages go to the window **under the pointer**. In ctypes, `RAWMOUSE` needs 2 padding bytes after `usFlags` (button flags at offset 4); without them every press reads as movement (cost one round on 2026-11-09).
 - **Claude Code's classifier blocks** `jj git push` to this public repo, changing scheduled tasks, and stopping processes by command line. The user runs those; give exact commands.
 - **USBPcap:** opening `\\.\USBPcapN` needs admin, so the user starts captures (admin PowerShell `Start-Process … USBPcapCMD.exe -d \\.\USBPcapN -o … -A`); add `--inject-descriptors` to get VID/PID in the file; files are locked while capturing; stop with `Stop-Process -Name USBPcapCMD`. Without descriptors, find the Viper by its 90-byte control transfers (`wLength = 0x5a`). Capture files contain the mouse serial.
 - **Razer leftovers:** driver files owned by TrustedInstaller need `takeown /f <file> /a` + `icacls <file> /grant Administrators:F` before deleting. Ghost device entries (devices not connected now) are missed by "present only" checks; list with `Get-PnpDevice` and `-not $_.Present`, remove with `pnputil /remove-device`.
@@ -159,8 +160,7 @@ Test vectors: a throwaway Python script calls the Python packet builders and pri
 
 | Thread | Ticket | Owner | Blocked on |
 |---|---|---|---|
-| Decide: Synapse 3 capture or direct button writes | `px-fmim` | user | user decision |
-| Fix the Viper's on-board buttons (factory defaults) + `set-mouse razer bind` | `px-oqc3` | agent | `px-fmim` |
+| Viper: which side button id (04-07) is where (only for per-side functions) | `px-5juk` | agent | user wish; needs 2 presses |
 | Viper stage indexes 0-based like Razer | `px-j08w` | agent | nothing |
 | Keep or remove USBPcap | `px-ut0y` | user | user decision |
 | Clean up capture files (serial) and installers | `px-c0lr` | user | nothing |
@@ -183,9 +183,7 @@ Test vectors: a throwaway Python script calls the Python packet builders and pri
 
 ## Unknowns and unverified
 
-- **Does a `02/0C` write to profile 1 persist in the Viper?** Expected (profile 1 is the on-board slot; razerqdhid treats profile 0 as temporary). Check: write, unplug 5 s, read back.
-- **Which physical side button is `04`/`05`/`06`/`07`.** The user reported that only left-side buttons misbehave, but `07` (Left arrow) and `06` (back) suggest one of each per side. The Notepad test will show it.
-- **Does Synapse 3 write the Viper's on-board buttons?** Unknown until captured (`px-fmim`). Is the mirror's device ID 120 really USB `1532:0078`? Unconfirmed.
+- **Which physical side button is `04`/`05`/`06`/`07`.** By function: `{04,06}` are the back buttons, `{05,07}` the front ones; the side of each id is unknown (`px-5juk`).
 - **Viper temporary DPI (NOSTORE) forgotten on replug?** Not proven (`px-w1a0`).
 - Synapse commands seen but not understood: `0b/03 [00 04 00]`, `00/b3`, `00/87 [01 04 …]`, `0F/80 [04 19 01 01 01]`.
 - When the X2A answers late (leftover replies): bursts seen, cause untested; the echo check handles it.
@@ -194,8 +192,7 @@ Test vectors: a throwaway Python script calls the Python packet builders and pri
 ## Don't
 
 - Don't put personal data in the repo; don't push without the user's explicit yes; don't rewrite pushed history. Never commit the capture files or `uninstall_official_razer.*`.
-- Don't let the user press Viper side buttons while a terminal or chat window has focus.
-- Don't write a Viper button without its original bytes at hand (`px-oqc3`), and don't use profile 0 for lasting changes. Don't run razerqdhid's flash reset (`06/0A`): effects on the Viper are unknown.
+- Don't write a Viper button without its original bytes at hand (`set-mouse razer` shows them), and don't use profile 0 for lasting changes. Don't run razerqdhid's flash reset (`06/0A`): effects on the Viper are unknown.
 - Don't reinstall Synapse 4 hoping it fixes the buttons: it never writes them, and it brings its drivers and filters back. Any temporary Razer install must be removed the careful way afterwards (ghost nodes, services, `.sys`).
 - Don't leave Razer drivers installed without Synapse (Viper fails with Code 10). Don't delete a filter driver's `.sys` while a device still lists it (Code 39).
 - Don't use Windows' "Primary mouse button" swap. Don't install Pulsar Fusion except, with the user's OK, briefly for a capture.

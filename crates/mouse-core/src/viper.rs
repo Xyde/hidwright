@@ -3,7 +3,9 @@
 //! Reads are a port of `razer_viper.py`. Writes (ticket px-w1a0) follow OpenRazer's driver
 //! (`razermouse_driver.c`, `razerchromacommon.c`; facts only, no code copied): the Viper has
 //! one LED (the logo) with static, breathing, spectrum, reactive and off, a brightness, saved
-//! DPI stages and the polling rate. Nothing for buttons, lift-off or angle snapping.
+//! DPI stages and the polling rate. Nothing for lift-off or angle snapping.
+//! Buttons are not in OpenRazer: their layout is from razerqdhid (MIT, `qdrazer/device.py`,
+//! facts only) and every value here was read from or written to this Viper (ticket px-oqc3).
 //! 90-byte feature report (report ID 0).
 //!
 //! `[0]` status, `[1]` transaction id, `[2..4]` remaining packets, `[4]` protocol type,
@@ -119,6 +121,160 @@ impl Logo {
     }
 }
 
+/// Button ids as the mouse lists them (02/84), with a label for each.
+/// Which side button sits where is not known yet (ticket px-31s4), so they keep their ids.
+pub const BUTTONS: [(u8, &str); 10] = [
+    (0x01, "left"),
+    (0x02, "right"),
+    (0x03, "wheel click"),
+    (0x04, "side04"),
+    (0x05, "side05"),
+    (0x06, "side06"),
+    (0x07, "side07"),
+    (0x0E, "dpi button"),
+    (0x09, "wheel up"),
+    (0x0A, "wheel down"),
+];
+
+/// Names `bind` accepts for a button (besides the labels above without spaces).
+pub fn button_id(name: &str) -> Option<u8> {
+    let n = name.to_lowercase().replace(['-', '_', ' '], "");
+    let n = n.strip_prefix("0x").unwrap_or(&n);
+    match n {
+        "left" => Some(0x01),
+        "right" => Some(0x02),
+        "middle" | "wheelclick" => Some(0x03),
+        "dpi" | "dpibutton" => Some(0x0E),
+        "wheelup" => Some(0x09),
+        "wheeldown" => Some(0x0A),
+        _ => {
+            let id = n.strip_prefix("side").unwrap_or(n);
+            match u8::from_str_radix(id, 16) {
+                Ok(id @ 0x04..=0x07) => Some(id),
+                _ => None,
+            }
+        }
+    }
+}
+
+pub fn button_label(id: u8) -> String {
+    BUTTONS
+        .iter()
+        .find(|(b, _)| *b == id)
+        .map_or_else(|| format!("button {id:02x}"), |(_, l)| l.to_string())
+}
+
+/// What one button does, as the mouse stores it: a class and its value bytes.
+/// Kept raw so anything the mouse reports can be shown and written back unchanged.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Binding {
+    pub class: u8,
+    pub value: Vec<u8>,
+}
+
+const CLASS_DISABLED: u8 = 0x00;
+const CLASS_MOUSE: u8 = 0x01;
+const CLASS_KEY: u8 = 0x02;
+const CLASS_DPI: u8 = 0x06;
+const CLASS_HYPERSHIFT: u8 = 0x0C;
+
+/// Function names `bind` accepts: each was read from or tested on this Viper.
+const FUNCTIONS: [(&str, u8, u8); 8] = [
+    ("left", CLASS_MOUSE, 0x01),
+    ("right", CLASS_MOUSE, 0x02),
+    ("middle", CLASS_MOUSE, 0x03),
+    ("back", CLASS_MOUSE, 0x04),
+    ("forward", CLASS_MOUSE, 0x05),
+    ("wheel-up", CLASS_MOUSE, 0x09),
+    ("wheel-down", CLASS_MOUSE, 0x0A),
+    // next DPI stage, after the last one back to the first (pressed through all 5 stages)
+    ("dpi-cycle", CLASS_DPI, 0x06),
+];
+
+impl Binding {
+    fn simple(class: u8, value: u8) -> Binding {
+        Binding {
+            class,
+            value: vec![value],
+        }
+    }
+
+    /// The factory function of a button (Razer's defaults; this Viper's Hypershift layer
+    /// holds the same back/forward pattern).
+    pub fn factory(id: u8) -> Option<Binding> {
+        Some(match id {
+            0x01..=0x03 | 0x09 | 0x0A => Binding::simple(CLASS_MOUSE, id),
+            0x04 | 0x06 => Binding::simple(CLASS_MOUSE, 0x04),
+            0x05 | 0x07 => Binding::simple(CLASS_MOUSE, 0x05),
+            0x0E => Binding::simple(CLASS_DPI, 0x06),
+            _ => return None,
+        })
+    }
+
+    /// A function name for button `id`: one of [`FUNCTIONS`] or `default`.
+    pub fn parse(id: u8, name: &str) -> Result<Binding> {
+        let n = name.to_lowercase();
+        if n == "default" {
+            return Binding::factory(id)
+                .ok_or_else(|| Error::Input(format!("no factory function known for {id:02x}")));
+        }
+        FUNCTIONS
+            .iter()
+            .find(|(f, _, _)| *f == n)
+            .map(|&(_, class, v)| Binding::simple(class, v))
+            .ok_or_else(|| {
+                let names: Vec<&str> = FUNCTIONS.iter().map(|f| f.0).collect();
+                Error::Input(format!(
+                    "unknown function '{name}'; use {} or default",
+                    names.join(", ")
+                ))
+            })
+    }
+
+    /// From a 02/8C reply's arguments: `[3]` class, `[4]` length, `[5..]` value.
+    pub fn from_reply(a: &[u8]) -> Result<Binding> {
+        let len = a[4] as usize;
+        if 5 + len > a.len() || len > 5 {
+            return Err(Error::Protocol(format!("button reply length {len}")));
+        }
+        Ok(Binding {
+            class: a[3],
+            value: a[5..5 + len].to_vec(),
+        })
+    }
+
+    pub fn describe(&self) -> String {
+        let v = &self.value;
+        let raw = || {
+            let hex: Vec<String> = v.iter().map(|b| format!("{b:02x}")).collect();
+            format!("class {:02x} [{}]", self.class, hex.join(" "))
+        };
+        match (self.class, v.as_slice()) {
+            (CLASS_DISABLED, _) => "disabled".into(),
+            (CLASS_MOUSE, [b]) => FUNCTIONS
+                .iter()
+                .find(|f| f.1 == CLASS_MOUSE && f.2 == *b)
+                .map_or_else(raw, |f| f.0.into()),
+            (CLASS_KEY, [mods, key]) => {
+                let k = match key {
+                    0x28 => "Enter".into(),
+                    0x4F => "Right arrow".into(),
+                    0x50 => "Left arrow".into(),
+                    k => format!("HID key 0x{k:02x}"),
+                };
+                if *mods == 0 {
+                    format!("key {k}")
+                } else {
+                    format!("key {k} (modifiers 0x{mods:02x})")
+                }
+            }
+            (CLASS_DPI, [0x06]) => "dpi-cycle".into(),
+            (CLASS_HYPERSHIFT, _) => "Hypershift".into(),
+            _ => raw(),
+        }
+    }
+}
+
 /// One thing the Viper can be told to change. All are saved in the mouse.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Setting {
@@ -132,7 +288,17 @@ pub enum Setting {
     /// Logo brightness, 0-255 as the mouse stores it.
     Brightness(u8),
     Logo(Logo),
+    /// One button's function, normal layer of on-board profile 1 (the Viper's only slot).
+    Button {
+        id: u8,
+        binding: Binding,
+    },
 }
+
+/// On-board profile for button reads/writes: 1 is the saved slot (0 is temporary per
+/// razerqdhid). Layer 0 = normal, 1 = Hypershift.
+const BUTTON_PROFILE: u8 = 0x01;
+const LAYER_NORMAL: u8 = 0x00;
 
 impl Setting {
     /// (transaction id, class, command, data size, arguments), checked. Byte meanings from
@@ -215,6 +381,19 @@ impl Setting {
                 };
                 (TID_LED, 0x0F, 0x02, size, a)
             }
+            // razerqdhid set_button_function: [profile, button, layer, class, length, value]
+            Setting::Button { id, binding } => {
+                if !BUTTONS.iter().any(|(b, _)| b == id) {
+                    return bad(format!("no Viper button {id:02x}"));
+                }
+                if binding.value.len() > 5 {
+                    return bad("button value longer than 5 bytes".into());
+                }
+                let mut a = vec![BUTTON_PROFILE, *id, LAYER_NORMAL, binding.class];
+                a.push(binding.value.len() as u8);
+                a.extend(&binding.value);
+                (TID_MISC, 0x02, 0x0C, 0x0A, a)
+            }
         })
     }
 }
@@ -254,6 +433,8 @@ pub struct Info {
     pub brightness: Option<u8>,
     /// Device mode: 0x00 normal, 0x03 driver (set by Synapse).
     pub device_mode: Option<u8>,
+    /// (button id, function) in the order the mouse lists them, normal layer.
+    pub buttons: Option<Vec<(u8, Binding)>>,
     pub errors: Vec<(&'static str, String)>,
 }
 
@@ -375,6 +556,28 @@ impl Viper {
         Ok(parse_dpi_stages(&a))
     }
 
+    /// One button's function (02/8C), normal layer of profile 1.
+    pub fn button(&self, id: u8) -> Result<Binding> {
+        let a = self.request_tid(
+            TID_MISC,
+            0x02,
+            0x8C,
+            0x0A,
+            &[BUTTON_PROFILE, id, LAYER_NORMAL],
+        )?;
+        Binding::from_reply(&a)
+    }
+
+    /// Every button the mouse lists (02/84: count, then ids) with its function.
+    pub fn buttons(&self) -> Result<Vec<(u8, Binding)>> {
+        let list = self.request_tid(TID_MISC, 0x02, 0x84, 0x00, &[0x00])?;
+        let n = (list[0] as usize).min(list.len() - 1);
+        list[1..1 + n]
+            .iter()
+            .map(|&id| Ok((id, self.button(id)?)))
+            .collect()
+    }
+
     /// Read everything; failures are collected instead of stopping.
     pub fn info(&self) -> Info {
         fn take<T>(
@@ -393,6 +596,7 @@ impl Viper {
             dpi_stages: take("dpi_stages", self.dpi_stages(), &mut errors),
             brightness: take("brightness", self.brightness(), &mut errors),
             device_mode: take("device_mode", self.device_mode(), &mut errors),
+            buttons: take("buttons", self.buttons(), &mut errors),
             errors,
         }
     }
@@ -627,6 +831,111 @@ mod tests {
         for p in 0..=100 {
             assert_eq!(brightness_percent(brightness_raw(p)), p);
         }
+    }
+
+    /// The four 02/0C writes this Viper accepted and read back on 2026-11-09 (sent padded to
+    /// 10 argument bytes by the Python diagnostic; the frame is the same).
+    #[test]
+    fn button_writes_match_what_the_mouse_accepted() {
+        let cases = [
+            (0x04, "back", "01040001010400000000"),
+            (0x05, "forward", "01050001010500000000"),
+            (0x07, "forward", "01070001010500000000"),
+            (0x0E, "dpi-cycle", "010e0006010600000000"),
+            (0x06, "default", "01060001010400000000"), // the same-value test write
+        ];
+        for (id, func, sent) in cases {
+            let s = Setting::Button {
+                id,
+                binding: Binding::parse(id, func).unwrap(),
+            };
+            let (tid, class, cmd, size, args) = s.request().unwrap();
+            assert_eq!((class, cmd, size), (0x02, 0x0C, 0x0A));
+            let sent: Vec<u8> = (0..sent.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&sent[i..i + 2], 16).unwrap())
+                .collect();
+            assert_eq!(
+                build_request(tid, class, cmd, size, &args),
+                build_request(tid, class, cmd, size, &sent),
+                "{id:02x} {func}"
+            );
+        }
+    }
+
+    /// 02/8C replies from this Viper (first 10 argument bytes), before and after the fix.
+    #[test]
+    fn button_replies_decode() {
+        let cases = [
+            (
+                [0x01, 0x04, 0x01, 0x02, 0x02, 0x00, 0x28, 0, 0, 0],
+                "key Enter",
+            ),
+            (
+                [0x01, 0x05, 0x01, 0x02, 0x02, 0x00, 0x4F, 0, 0, 0],
+                "key Right arrow",
+            ),
+            (
+                [0x01, 0x07, 0x01, 0x02, 0x02, 0x00, 0x50, 0, 0, 0],
+                "key Left arrow",
+            ),
+            (
+                [0x01, 0x0E, 0x01, 0x0C, 0x01, 0x01, 0, 0, 0, 0],
+                "Hypershift",
+            ),
+            ([0x01, 0x06, 0x01, 0x01, 0x01, 0x04, 0, 0, 0, 0], "back"),
+            ([0x01, 0x09, 0x00, 0x01, 0x01, 0x09, 0, 0, 0, 0], "wheel-up"),
+            (
+                [0x01, 0x0E, 0x01, 0x06, 0x01, 0x06, 0, 0, 0, 0],
+                "dpi-cycle",
+            ),
+        ];
+        for (reply, want) in cases {
+            let b = Binding::from_reply(&reply).unwrap();
+            assert_eq!(b.describe(), want);
+            // what is read can be written back unchanged
+            let (_, _, _, _, args) = Setting::Button {
+                id: reply[1],
+                binding: b,
+            }
+            .request()
+            .unwrap();
+            assert_eq!(&args[3..], &reply[3..3 + args.len() - 3]);
+        }
+        assert_eq!(
+            Binding::from_reply(&[1, 0x04, 1, 0x02, 0x02, 0x00, 0x28, 0, 0, 0]).unwrap(),
+            Binding {
+                class: 0x02,
+                value: vec![0x00, 0x28]
+            }
+        );
+    }
+
+    #[test]
+    fn button_names_and_factory() {
+        assert_eq!(button_id("dpi"), Some(0x0E));
+        assert_eq!(button_id("side04"), Some(0x04));
+        assert_eq!(button_id("side-07"), Some(0x07));
+        assert_eq!(button_id("05"), Some(0x05));
+        assert_eq!(button_id("Wheel-Click"), Some(0x03));
+        assert_eq!(button_id("side08"), None);
+        assert_eq!(button_id("thumb1"), None);
+        for (id, _) in BUTTONS {
+            assert!(Binding::factory(id).is_some(), "{id:02x}");
+        }
+        assert_eq!(Binding::factory(0x07).unwrap().describe(), "forward");
+        assert!(matches!(
+            Binding::parse(0x04, "enter"),
+            Err(Error::Input(_))
+        ));
+        assert!(matches!(
+            Setting::Button {
+                id: 0x08,
+                binding: Binding::factory(0x04).unwrap()
+            }
+            .request(),
+            Err(Error::Input(_))
+        ));
     }
 
     #[test]

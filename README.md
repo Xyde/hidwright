@@ -15,7 +15,7 @@ A small, home-made tool for gaming mice, so you don't need the vendor's software
 | Device | What you can do |
 |---|---|
 | **Pulsar X2A** (with its cable) | Swap left/right, remap any button, DPI stages, onboard profiles, polling rate, debounce, ripple control, angle snapping, motion sync: all saved in the mouse. Lift-off: experimental. |
-| **Razer Viper** (with its cable) | DPI stages, polling rate, logo lighting (static, breathing, spectrum, reactive, off) and brightness: all saved in the mouse (Rust version). Temporary DPI for the calibrator. |
+| **Razer Viper** (with its cable) | DPI stages, polling rate, logo lighting (static, breathing, spectrum, reactive, off), brightness and button functions: all saved in the mouse (Rust version). Temporary DPI for the calibrator. |
 | **Any mouse + [RawAccel](https://github.com/RawAccelOfficial/rawaccel)** | Its own sensor rotation, measured with a built-in full-screen calibrator |
 | Xtrfy M42, Dumang keyboards | Planned |
 
@@ -62,6 +62,7 @@ set-mouse debounce 2            milliseconds
 set-mouse bind thumb1 ctrl+c    remap a button ('default' = factory)
 set-mouse rotation pulsar -1.5  give one mouse its own rotation in RawAccel
 set-mouse razer light static ff8800   Razer: logo colour (also: razer dpi, poll, brightness)
+set-mouse razer bind dpi default      Razer: button function ('default' = factory)
 set-mouse help                  the full list
 ```
 
@@ -72,7 +73,8 @@ Without the PATH step, write `python set_mouse.py` instead of `set-mouse`.
 - Pulsar settings are written the same way the official software does it. Factory values are one
   command away (`unswap`, `bind <button> default`, …).
 - Razer: every command uses the byte layout of the open-source [OpenRazer](https://github.com/openrazer/openrazer)
-  driver and was tried on a real Viper; values are checked before anything is sent.
+  driver and was tried on a real Viper; values are checked before anything is sent. Buttons are not in
+  OpenRazer: their layout comes from razerqdhid, and each write is read back from the mouse.
 - RawAccel: `settings.json` is backed up (timestamped) before every change, and restored if loading fails.
 
 ## For developers
@@ -84,7 +86,8 @@ Without the PATH step, write `python set_mouse.py` instead of `set-mouse`.
 ## Credits
 
 - Pulsar protocol: [packerlschupfer/pulsar-mouse-linux](https://github.com/packerlschupfer/pulsar-mouse-linux) (MIT).
-- Razer protocol: as documented by the [OpenRazer](https://github.com/openrazer/openrazer) project.
+- Razer protocol: as documented by the [OpenRazer](https://github.com/openrazer/openrazer) project;
+  button layout from razerqdhid (MIT).
 - Per-mouse rotation uses [RawAccel](https://github.com/RawAccelOfficial/rawaccel)'s driver and settings format.
 
 ## License

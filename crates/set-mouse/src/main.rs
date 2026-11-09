@@ -50,6 +50,10 @@ set-mouse (Rust, port in progress)
   set-mouse razer light static ff0000
                                   also: off, spectrum, breath [colour [colour]],
                                   reactive colour [speed 1-4]
+  set-mouse razer bind side04 back
+                                  buttons: left right middle side04-side07 dpi
+                                  wheel-up wheel-down; functions: left right middle
+                                  back forward wheel-up wheel-down dpi-cycle default
 
   Pulsar X2A (saved in the mouse itself):
   set-mouse info                  all Pulsar settings
@@ -561,6 +565,19 @@ fn razer_write(what: &str, rest: &[String]) -> Result<(), String> {
             };
             (Some(V::Logo(logo)), None)
         }
+        "bind" => match rest {
+            [button, func] => {
+                let id = viper::button_id(button).ok_or_else(|| {
+                    format!(
+                        "unknown Viper button '{button}'; use left, right, middle, \
+                         side04-side07, dpi, wheel-up or wheel-down"
+                    )
+                })?;
+                let binding = viper::Binding::parse(id, func).map_err(e)?;
+                (Some(V::Button { id, binding }), None)
+            }
+            _ => return Err(usage("bind BUTTON FUNCTION   (see set-mouse help)")),
+        },
         _ => {
             return Err(format!(
                 "unknown: set-mouse razer {what}. Try: set-mouse help"
@@ -611,6 +628,22 @@ fn razer_write(what: &str, rest: &[String]) -> Result<(), String> {
         ),
         // The mouse can't report its effect, so say what was saved.
         V::Logo(logo) => say!("Razer Viper: logo light set to {}", logo.describe()),
+        V::Button { id, binding } => {
+            let now = v.button(*id).map_err(e)?;
+            if now != *binding {
+                return Err(format!(
+                    "Razer Viper: {} reads back as {}, not {}",
+                    viper::button_label(*id),
+                    now.describe(),
+                    binding.describe()
+                ));
+            }
+            say!(
+                "Razer Viper: {} now {}",
+                viper::button_label(*id),
+                now.describe()
+            );
+        }
     }
     Ok(())
 }
@@ -667,6 +700,21 @@ fn format_razer(s: &viper::Info) -> String {
             m => format!("0x{m:02x}"),
         };
         out += &format!("  device mode    {name}\n");
+    }
+    if let Some(buttons) = &s.buttons {
+        out += "  buttons\n";
+        for (id, binding) in buttons {
+            let mark = if Some(binding) == viper::Binding::factory(*id).as_ref() {
+                ""
+            } else {
+                "   <- changed"
+            };
+            out += &format!(
+                "    {:<28} -> {}{mark}\n",
+                viper::button_label(*id),
+                binding.describe()
+            );
+        }
     }
     for (field, err) in &s.errors {
         out += &format!("  ({field}: {err})\n");
