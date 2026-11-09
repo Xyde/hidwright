@@ -205,35 +205,64 @@ class X2A:
             raise IOError(f"GetFeature failed (Windows error {ctypes.get_last_error()})")
         return bytes(buf[1:])
 
-    def poll(self, accept):
+    @staticmethod
+    def answers(rsp, pkt, accept):
+        """True if rsp is the reply to pkt, not a leftover.
+
+        The mouse keeps its last reply, status 0x01 included, until it has processed the next
+        request; a poll that comes too early gets the previous answer (seen 2026-11-09: button
+        reads shifted by one, firmware read as another session's button reply). So a reply
+        must echo category + register, the profile (byte 6) if the request names one, and the
+        first payload byte (byte 7) if there is one. Byte 3 isn't compared: DPI-stage reads
+        (sub 0x15) are answered with sub 0x21. Same rule as crates/mouse-core/src/x2a.rs.
+        """
+        return (rsp[0] in accept and rsp[1] == pkt[1] and rsp[2] == pkt[2]
+                and (pkt[6] == 0 or rsp[6] == pkt[6]) and (pkt[7] == 0 or rsp[7] == pkt[7]))
+
+    def poll(self, pkt, accept):
         rsp = self.get_report()
         for _ in range(7):
-            if rsp[0] in accept:
+            if self.answers(rsp, pkt, accept):
                 break
             time.sleep(0.02)
             rsp = self.get_report()
         return rsp
 
+    def transact(self, pkt, accept):
+        """Send pkt, wait for its reply. Resend if unanswered (0x00, up to 6 per session) or
+        if the mouse is still showing another request's reply (up to 2)."""
+        self.set_report(pkt)
+        rsp = self.poll(pkt, accept)
+        foreign_resends = 2
+        while True:
+            foreign = rsp[0] in accept and not self.answers(rsp, pkt, accept)
+            if rsp[0] == 0x00 and self._resends_left > 0:
+                self._resends_left -= 1
+            elif foreign and foreign_resends > 0:
+                foreign_resends -= 1
+            else:
+                break
+            time.sleep(0.1)
+            self.set_report(pkt)
+            rsp = self.poll(pkt, accept)
+        if rsp[0] in accept and not self.answers(rsp, pkt, accept):
+            raise IOError(f"The mouse kept answering another request (asked {pkt[1]:02x}/{pkt[2]:02x}, "
+                          f"got {rsp[1]:02x}/{rsp[2]:02x}); is another program talking to it?")
+        if rsp[0] in accept:
+            self._resends_left = 0
+        return rsp
+
     def cmd(self, cat, reg, sub, profile, payload=()):
-        self.set_report(self.build(cat, reg, sub, profile, payload))
-        rsp = self.poll((0x01, 0x02))
+        rsp = self.transact(self.build(cat, reg, sub, profile, payload), (0x01, 0x02))
         if rsp[0] not in (0x01, 0x02):
             raise IOError(f"Mouse did not acknowledge write (reply byte 0x{rsp[0]:02x})")
         time.sleep(0.03)  # a write can be acked (0x02) slightly before it's applied
         return rsp
 
     def read(self, cat, reg, sub, profile, payload=()):
-        pkt = self.build(cat, reg | 0x80, sub, profile, payload)
-        self.set_report(pkt)
-        rsp = self.poll((0x01,))
-        while rsp[0] == 0x00 and self._resends_left > 0:
-            self._resends_left -= 1
-            time.sleep(0.1)
-            self.set_report(pkt)
-            rsp = self.poll((0x01,))
+        rsp = self.transact(self.build(cat, reg | 0x80, sub, profile, payload), (0x01,))
         if rsp[0] != 0x01:
             raise IOError(f"Bad reply from mouse (byte 0 = 0x{rsp[0]:02x})")
-        self._resends_left = 0
         return rsp
 
     # ---- device info / profiles

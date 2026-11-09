@@ -1,18 +1,42 @@
 //! set-mouse, Rust version (port in progress, epic px-0oek).
 //!
-//! So far it reads both mice and writes every Pulsar X2A setting. RawAccel, the portal and the
-//! Viper's temporary DPI still live in the Python version, which stays on PATH as `set-mouse`
-//! until this one reaches parity. Messages match the Python's word for word.
+//! Reads both mice, writes every Pulsar X2A setting, sets per-mouse RawAccel rotation and loads
+//! RawAccel's settings. The portal still lives in the Python version, which stays on PATH as
+//! `set-mouse` until this one reaches parity. Messages match the Python's word for word.
 
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::time::Duration;
 
+use mouse_core::rawaccel::{self, Change};
+use mouse_core::rawinput::{self, RawMouse};
 use mouse_core::viper::{self, Viper};
 use mouse_core::x2a::{self, Binding, Button, Setting, Snapshot, Toggle, X2a};
+use mouse_core::{dpi_restore, local_time};
+
+/// `println!` that stops quietly when the reader has gone (`set-mouse | head -1`) instead of
+/// panicking. Anything already sent to a mouse has been sent by then.
+macro_rules! say {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        if writeln!(std::io::stdout(), $($arg)*).is_err() {
+            std::process::exit(0);
+        }
+    }};
+}
+
+/// Text that already ends in a newline, with the same rule as [`say!`].
+fn say_raw(text: &str) {
+    use std::io::Write as _;
+    if std::io::stdout().write_all(text.as_bytes()).is_err() {
+        std::process::exit(0);
+    }
+}
 
 const USAGE: &str = "\
 set-mouse (Rust, port in progress)
 
-  set-mouse                       status of both mice (RawAccel rotation: not yet)
+  set-mouse                       status of everything (Pulsar, Razer, RawAccel rotation)
   set-mouse razer                 Razer Viper settings (read-only)
 
   Pulsar X2A (saved in the mouse itself):
@@ -29,7 +53,20 @@ set-mouse (Rust, port in progress)
 
   info, swap, unswap, dpi, stage, lod and bind take -p 1-5 for another onboard profile.
 
-Not here yet (the Python `set-mouse` on PATH does them): portal, rotation, reload.";
+  RawAccel rotation (per mouse):
+  set-mouse rotation              show each mouse's rotation
+  set-mouse rotation pulsar 0     set one mouse's rotation (gives it its own profile)
+  set-mouse reload                load settings.json into RawAccel now (runs at sign-in too)
+
+Not here yet (the Python `set-mouse` on PATH does it): portal.";
+
+/// Names `set-mouse rotation` accepts, and the mouse each one means.
+const ALIASES: [(&str, &str); 4] = [
+    ("pulsar", "Pulsar X2A"),
+    ("x2a", "Pulsar X2A"),
+    ("razer", "Razer Viper"),
+    ("viper", "Razer Viper"),
+];
 
 /// Pulsar commands that change something.
 const PULSAR_WRITES: [&str; 12] = [
@@ -52,7 +89,9 @@ fn main() -> ExitCode {
     match run(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(msg) => {
-            eprintln!("{msg}");
+            if !msg.is_empty() {
+                eprintln!("{msg}");
+            }
             ExitCode::FAILURE
         }
     }
@@ -60,28 +99,171 @@ fn main() -> ExitCode {
 
 fn run(args: &[String]) -> Result<(), String> {
     let cmd = args.first().map(|s| s.to_lowercase());
+    // A calibration run that died leaves its temporary DPI behind; any command fixes that first
+    // (the portal does it itself, and help shouldn't touch the mice).
+    if !matches!(cmd.as_deref(), Some("help" | "-h" | "--help" | "portal")) {
+        restore_interrupted_test_dpi();
+    }
     match cmd.as_deref() {
         None => {
             // Like the Python status: each block on its own, a failure printed in its place.
-            let blocks: [fn() -> Result<(), String>; 2] = [|| pulsar_info(None), razer_info];
+            let blocks: [fn() -> Result<(), String>; 3] =
+                [|| pulsar_info(None), razer_info, show_rotation];
             for block in blocks {
                 if let Err(msg) = block() {
-                    println!("{msg}");
+                    say!("{msg}");
                 }
-                println!();
+                say!();
             }
             Ok(())
         }
         Some("info") => pulsar_info(parse_profile(&args[1..])?),
         Some(c) if PULSAR_WRITES.contains(&c) => pulsar_write(c, &args[1..]),
         Some("razer" | "viper") => razer_info(),
+        Some("rotation") => match &args[1..] {
+            [] => show_rotation(),
+            [who, deg] => set_rotation(who, deg),
+            _ => Err("usage: set-mouse rotation [pulsar|razer DEGREES]".into()),
+        },
+        Some("reload") => reload(),
         Some("help" | "-h" | "--help") => {
-            println!("{USAGE}");
+            say!("{USAGE}");
             Ok(())
         }
-        Some(other) => Err(format!(
-            "'{other}' isn't in the Rust version yet; the Python `set-mouse {other}` still does it"
+        Some("portal") => Err(
+            "The portal isn't in the Rust version yet; the Python `set-mouse portal` has it".into(),
+        ),
+        Some(_) => Err(format!(
+            "unknown command '{}'. Try: set-mouse help",
+            args[0]
         )),
+    }
+}
+
+// ------------------------------------------------------------------ files next to the tool
+
+/// Where `startup.log` and `dpi_restore.json` live. While the Python version is in daily use
+/// they are in its folder (the portal writes `dpi_restore.json` there), so look for its
+/// `mouse_startup.py` in the exe's folder and up to three folders above it (a cargo build sits
+/// in `target\release\`). Otherwise: the exe's own folder.
+/// Revisit when the Python is retired (ticket px-t5i3).
+fn data_dir() -> PathBuf {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .unwrap_or_default();
+    exe_dir
+        .ancestors()
+        .take(4)
+        .find(|d| d.join("mouse_startup.py").is_file())
+        .map_or(exe_dir.clone(), Path::to_path_buf)
+}
+
+fn restore_interrupted_test_dpi() {
+    let path = data_dir().join(dpi_restore::FILE_NAME);
+    if !path.exists() {
+        return;
+    }
+    match dpi_restore::restore_if_pending(&path) {
+        Ok(fixed) if !fixed.is_empty() => {
+            // Python prints the dict: {'Pulsar X2A': 3200, 'Razer Viper': 3200}
+            let items: Vec<String> = fixed.iter().map(|(n, d)| format!("'{n}': {d}")).collect();
+            say!(
+                "Restored DPI after an interrupted calibration: {{{}}}",
+                items.join(", ")
+            );
+        }
+        Ok(_) => {}
+        Err(e) => say!("Couldn't restore DPI from an interrupted calibration yet: {e}"),
+    }
+}
+
+/// Append a timestamped line to `startup.log` (kept to its last 200 lines) and print it.
+fn log(msg: &str) {
+    let (y, mo, d, h, mi, s) = local_time();
+    let line = format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}  {msg}");
+    let path = data_dir().join("startup.log");
+    let old = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lines: Vec<&str> = old.lines().collect();
+    lines.drain(..lines.len().saturating_sub(199));
+    lines.push(&line);
+    // CRLF like the Python's write_text on Windows, so both versions share one tidy log.
+    let nl = if cfg!(windows) { "\r\n" } else { "\n" };
+    let _ = std::fs::write(&path, lines.join(nl) + nl);
+    say!("{line}");
+}
+
+// ------------------------------------------------------------------ RawAccel
+
+/// Mice this tool knows by name, as Raw Input lists them.
+fn known_mice() -> Vec<RawMouse> {
+    rawinput::mice()
+        .into_iter()
+        .filter(RawMouse::is_known)
+        .collect()
+}
+
+fn show_rotation() -> Result<(), String> {
+    let Some(s) = rawaccel::load().map_err(|e| e.to_string())? else {
+        say!("RawAccel settings.json not found");
+        return Ok(());
+    };
+    say!("RawAccel rotation");
+    for m in rawaccel::summary(&s.cfg, &known_mice()) {
+        let shared = if m.shared_with.is_empty() {
+            String::new()
+        } else {
+            format!("   (shared with {})", m.shared_with.join(", "))
+        };
+        say!(
+            "  {:<12} {:+.1} deg   profile '{}'{shared}",
+            m.name,
+            m.rotation,
+            m.profile
+        );
+    }
+    Ok(())
+}
+
+fn set_rotation(who: &str, deg: &str) -> Result<(), String> {
+    let who = who.to_lowercase();
+    let Some(&(_, name)) = ALIASES.iter().find(|(a, _)| *a == who) else {
+        let names: Vec<&str> = ALIASES.iter().map(|(a, _)| *a).collect();
+        return Err(format!("which mouse? use one of: {}", names.join(", ")));
+    };
+    let deg: f64 = deg
+        .trim()
+        .parse()
+        .map_err(|_| "rotation must be a number of degrees, e.g. -2.6".to_string())?;
+    let mouse = known_mice()
+        .into_iter()
+        .find(|m| m.name == name)
+        .ok_or(format!("{name} isn't plugged in"))?;
+    let backup = rawaccel::apply(&[Change {
+        id: mouse.id,
+        name: name.into(),
+        rotation: deg,
+    }])
+    .map_err(|e| e.to_string())?;
+    let file = backup.file_name().map(|f| f.to_string_lossy().into_owned());
+    say!(
+        "{name}: rotation {deg:+.1} deg, loaded into RawAccel (backup: {})",
+        file.unwrap_or_default()
+    );
+    show_rotation()
+}
+
+/// What the sign-in task does: load settings.json into the driver, log the result.
+fn reload() -> Result<(), String> {
+    match rawaccel::reload(6, Duration::from_secs(5)) {
+        Ok(line) => {
+            log(&line);
+            Ok(())
+        }
+        Err(line) => {
+            log(&line);
+            Err(String::new()) // already said; just exit with 1
+        }
     }
 }
 
@@ -264,7 +446,7 @@ fn pulsar_write(cmd: &str, rest: &[String]) -> Result<(), String> {
     let settings = match plan {
         Plan::ActiveProfile(p) => {
             m.set_active_profile(p).map_err(e)?;
-            println!("active profile now {}", m.active_profile().map_err(e)?);
+            say!("active profile now {}", m.active_profile().map_err(e)?);
             return Ok(());
         }
         Plan::Settings(s) => s,
@@ -275,33 +457,33 @@ fn pulsar_write(cmd: &str, rest: &[String]) -> Result<(), String> {
     }
     // Read back what the mouse now holds, and say it the way the Python does.
     match &settings[0] {
-        Setting::Button(Button::Left, _) if settings.len() == 2 => println!(
+        Setting::Button(Button::Left, _) if settings.len() == 2 => say!(
             "profile {prof}: left button -> {}, right button -> {}",
             m.button(Button::Left, prof).map_err(e)?,
             m.button(Button::Right, prof).map_err(e)?
         ),
-        Setting::Polling(_) => println!("polling rate now {} Hz", m.polling_hz().map_err(e)?),
-        Setting::Debounce(_) => println!("debounce now {} ms", m.debounce_ms().map_err(e)?),
+        Setting::Polling(_) => say!("polling rate now {} Hz", m.polling_hz().map_err(e)?),
+        Setting::Debounce(_) => say!("debounce now {} ms", m.debounce_ms().map_err(e)?),
         Setting::Toggle(t, _) => {
-            println!("{} now {}", t.name(), on_off_word(m.toggle(*t).map_err(e)?))
+            say!("{} now {}", t.name(), on_off_word(m.toggle(*t).map_err(e)?))
         }
         Setting::DpiStages { .. } => {
             let (act, stages) = m.dpi_stages(prof).map_err(e)?;
             let xs: Vec<String> = stages.iter().map(|(x, _)| x.to_string()).collect();
-            println!(
+            say!(
                 "profile {prof}: DPI stages [{}], active stage {act}",
                 xs.join(", ")
             );
         }
-        Setting::DpiStage(_) => println!(
+        Setting::DpiStage(_) => say!(
             "profile {prof}: active DPI stage now {}",
             m.dpi_stage(prof).map_err(e)?
         ),
-        Setting::Lod(_) => println!(
+        Setting::Lod(_) => say!(
             "profile {prof}: lift-off now {}",
             x2a::describe_lod(m.lod_raw(prof).map_err(e)?)
         ),
-        Setting::Button(btn, _) => println!(
+        Setting::Button(btn, _) => say!(
             "profile {prof}: {} -> {}",
             btn.label(),
             m.button(*btn, prof).map_err(e)?
@@ -313,13 +495,13 @@ fn pulsar_write(cmd: &str, rest: &[String]) -> Result<(), String> {
 fn pulsar_info(profile: Option<u8>) -> Result<(), String> {
     let mut m = X2a::open().map_err(|e| e.to_string())?;
     let snap = m.snapshot(profile).map_err(|e| e.to_string())?;
-    print!("{}", format_info(&snap));
+    say_raw(&format_info(&snap));
     Ok(())
 }
 
 fn razer_info() -> Result<(), String> {
     let v = Viper::open().map_err(|e| e.to_string())?;
-    print!("{}", format_razer(&v.info()));
+    say_raw(&format_razer(&v.info()));
     Ok(())
 }
 

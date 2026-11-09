@@ -450,7 +450,23 @@ impl Setting {
         )
     }
 
-    /// (category, register, sub-command, payload), after checking the value is allowed.
+    /// What a person may ask for, beyond what the protocol can encode: DPI values 100-26000
+    /// in steps of 100. Restoring values read from the mouse skips this (it may hold e.g. 1850
+    /// set by Pulsar Fusion), see [`X2a::write_unchecked`].
+    pub fn check(&self) -> Result<()> {
+        if let Setting::DpiStages { dpis, .. } = self
+            && let Some(d) = dpis
+                .iter()
+                .find(|&&d| !(DPI_MIN..=DPI_MAX).contains(&d) || d % DPI_STEP != 0)
+        {
+            return Err(Error::Input(format!(
+                "DPI must be {DPI_MIN}-{DPI_MAX} in steps of {DPI_STEP}, not {d}"
+            )));
+        }
+        self.request().map(|_| ())
+    }
+
+    /// (category, register, sub-command, payload). Refuses only what can't be encoded.
     fn request(&self) -> Result<(u8, u8, u8, Vec<u8>)> {
         let bad = |m: String| Err(Error::Input(m));
         Ok(match self {
@@ -478,14 +494,6 @@ impl Setting {
             Setting::DpiStages { dpis, active } => {
                 if dpis.is_empty() || dpis.len() > MAX_STAGES {
                     return bad(format!("1 to {MAX_STAGES} DPI stages, not {}", dpis.len()));
-                }
-                if let Some(d) = dpis
-                    .iter()
-                    .find(|&&d| !(DPI_MIN..=DPI_MAX).contains(&d) || d % DPI_STEP != 0)
-                {
-                    return bad(format!(
-                        "DPI must be {DPI_MIN}-{DPI_MAX} in steps of {DPI_STEP}, not {d}"
-                    ));
                 }
                 if !(1..=dpis.len()).contains(&(*active as usize)) {
                     return bad(format!("--active must be between 1 and {}", dpis.len()));
@@ -517,7 +525,13 @@ impl Setting {
     }
 
     /// The full packet, with `profile` in byte 6 (for globals: the active profile, see above).
+    /// Checked with [`Setting::check`] first.
     pub fn packet(&self, profile: u8) -> Result<[u8; REPORT_SIZE]> {
+        self.check()?;
+        self.packet_unchecked(profile)
+    }
+
+    fn packet_unchecked(&self, profile: u8) -> Result<[u8; REPORT_SIZE]> {
         let (cat, reg, sub, payload) = self.request()?;
         Ok(build(cat, reg, sub, profile, &payload))
     }
@@ -590,10 +604,10 @@ impl X2a {
     }
 
     /// Read replies until byte 0 is one of `accept` (up to 7 extra tries, 20 ms apart).
-    fn poll(&self, accept: &[u8]) -> Result<Vec<u8>> {
+    fn poll(&self, pkt: &[u8; REPORT_SIZE], accept: &[u8]) -> Result<Vec<u8>> {
         let mut rsp = self.dev.get_feature()?;
         for _ in 0..7 {
-            if accept.contains(&rsp[0]) {
+            if answers(&rsp, pkt, accept) {
                 break;
             }
             sleep(Duration::from_millis(20));
@@ -602,16 +616,33 @@ impl X2a {
         Ok(rsp)
     }
 
-    /// Send `pkt` and wait for a reply whose byte 0 is in `accept`. If the mouse didn't answer
-    /// at all (0x00, happens right after opening), resend: up to 6 times per session.
+    /// Send `pkt` and wait for its reply: byte 0 in `accept`, and the reply echoing the
+    /// request's category and register (see [`answers`]). If the mouse didn't answer at all
+    /// (0x00, happens right after opening), resend: up to 6 times per session. If it answered
+    /// a different request, resend up to twice, then give up rather than return wrong data.
     fn transact(&mut self, pkt: &[u8; REPORT_SIZE], accept: &[u8]) -> Result<Vec<u8>> {
         self.dev.set_feature(pkt)?;
-        let mut rsp = self.poll(accept)?;
-        while rsp[0] == NOT_ANSWERED && self.resends_left > 0 {
-            self.resends_left -= 1;
+        let mut rsp = self.poll(pkt, accept)?;
+        let mut foreign_resends = 2;
+        loop {
+            let foreign = accept.contains(&rsp[0]) && !answers(&rsp, pkt, accept);
+            if rsp[0] == NOT_ANSWERED && self.resends_left > 0 {
+                self.resends_left -= 1;
+            } else if foreign && foreign_resends > 0 {
+                foreign_resends -= 1;
+            } else {
+                break;
+            }
             sleep(Duration::from_millis(100));
             self.dev.set_feature(pkt)?;
-            rsp = self.poll(accept)?;
+            rsp = self.poll(pkt, accept)?;
+        }
+        if accept.contains(&rsp[0]) && !answers(&rsp, pkt, accept) {
+            return Err(Error::Protocol(format!(
+                "The mouse kept answering another request (asked {:02x}/{:02x}, got {:02x}/{:02x}); \
+                 is another program talking to it?",
+                pkt[1], pkt[2], rsp[1], rsp[2]
+            )));
         }
         if accept.contains(&rsp[0]) {
             self.resends_left = 0;
@@ -650,6 +681,12 @@ impl X2a {
     /// one. Ignored for global settings, which always go out with the active profile's number
     /// so the mouse saves them (see [`Setting`]). Returns the profile byte that was sent.
     pub fn write(&mut self, setting: &Setting, profile: Option<u8>) -> Result<u8> {
+        setting.check()?;
+        self.write_unchecked(setting, profile)
+    }
+
+    /// [`X2a::write`] without [`Setting::check`]: for putting back values read from the mouse.
+    pub(crate) fn write_unchecked(&mut self, setting: &Setting, profile: Option<u8>) -> Result<u8> {
         let pkt_profile = match profile {
             Some(p) if !setting.is_global() => p,
             _ => self.active_profile()?,
@@ -659,7 +696,7 @@ impl X2a {
                 "Mouse reports active profile {pkt_profile}; expected 1-5, so nothing was written"
             )));
         }
-        let pkt = setting.packet(pkt_profile)?;
+        let pkt = setting.packet_unchecked(pkt_profile)?;
         self.cmd(&pkt)?;
         Ok(pkt_profile)
     }
@@ -759,6 +796,29 @@ impl X2a {
             buttons,
         })
     }
+}
+
+/// True if `rsp` is the reply to `pkt`, not a leftover.
+///
+/// The mouse has one reply buffer that keeps its last answer, status 0x01 included, until it
+/// has processed the next request; a poll that comes too early gets the previous answer. Seen
+/// 2026-11-09 in both the Python and Rust readers: button reads shifted by one, globals read
+/// from other replies. So a reply must echo what identifies the request:
+/// - status byte in `accept`;
+/// - bytes 1-2, category and register (read bit included);
+/// - byte 6, the profile, when the request names one (for profile-0 reads like firmware and
+///   active profile, byte 6 carries data);
+/// - byte 7, the first payload byte, when the request has one (button id for button reads;
+///   write acknowledgements echo the whole packet).
+///
+/// Byte 3 isn't compared: a DPI-stage read (sub 0x15) is answered with sub 0x21.
+/// Measured 2026-11-09: 936 read replies and 8 kinds of write acknowledgement all fit this.
+fn answers(rsp: &[u8], pkt: &[u8; REPORT_SIZE], accept: &[u8]) -> bool {
+    accept.contains(&rsp[0])
+        && rsp[1] == pkt[1]
+        && rsp[2] == pkt[2]
+        && (pkt[6] == 0 || rsp[6] == pkt[6])
+        && (pkt[7] == 0 || rsp[7] == pkt[7])
 }
 
 /// DPI-stage reply: `[7]` active stage, `[8]` count, then 5 bytes per stage
@@ -886,6 +946,86 @@ mod tests {
         assert_eq!(key_name(0x3A).as_deref(), Some("f1"));
         assert_eq!(key_name(0x45).as_deref(), Some("f12"));
         assert_eq!(key_name(0x32), None);
+    }
+
+    /// Real replies seen on the mouse (2026-11-09).
+    #[test]
+    fn replies_must_echo_their_request() {
+        let rsp = |hex: &str| -> Vec<u8> {
+            let mut v: Vec<u8> = (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+                .collect();
+            v.resize(REPORT_SIZE, 0);
+            v
+        };
+        let debounce_read = build(0x04, 0x83, 0x03, 0, &[]);
+        assert!(answers(
+            &rsp("0104830300000001"),
+            &debounce_read,
+            &[ANSWERED]
+        ));
+        // a reply for the DPI-stage read is not one for debounce
+        assert!(!answers(
+            &rsp("0105842100000101"),
+            &debounce_read,
+            &[ANSWERED]
+        ));
+        // the DPI-stage read is answered with sub 0x21; still its reply
+        let dpi_read = build(0x05, 0x84, 0x15, 1, &[]);
+        assert!(answers(&rsp("0105842100000101"), &dpi_read, &[ANSWERED]));
+        // write acknowledgements echo too (debounce = 1, profile 1)
+        let debounce_write = Setting::Debounce(1).packet(1).unwrap();
+        assert!(answers(
+            &rsp("0204030300000101"),
+            &debounce_write,
+            &[ANSWERED, PENDING]
+        ));
+        // right reply, wrong status
+        assert!(!answers(
+            &rsp("0304830300000001"),
+            &debounce_read,
+            &[ANSWERED]
+        ));
+
+        // The failure seen: reading the wheel's binding, the buffer still holds the reply for
+        // the right button (id 02). Same category and register; only byte 7 tells them apart.
+        let wheel_read = build(0x04, 0x81, 0x06, 1, &[Button::Wheel.id(), 0xFF]);
+        assert!(!answers(
+            &rsp("010481060000010201010000"),
+            &wheel_read,
+            &[ANSWERED]
+        ));
+        assert!(answers(
+            &rsp("010481060000010301030000"),
+            &wheel_read,
+            &[ANSWERED]
+        ));
+        // ...and the same button on another profile is another request too
+        assert!(!answers(
+            &rsp("010481060000020301030000"),
+            &wheel_read,
+            &[ANSWERED]
+        ));
+        // firmware read: byte 6 is data there, so it isn't compared
+        let firmware_read = build(0x01, 0x87, 0x04, 0, &[]);
+        assert!(answers(
+            &rsp("0101870400000001000000"),
+            &firmware_read,
+            &[ANSWERED]
+        ));
+        // write acknowledgements echo their whole packet (8 kinds measured)
+        let dpi_write = Setting::DpiStages {
+            dpis: vec![3200],
+            active: 1,
+        }
+        .packet(1)
+        .unwrap();
+        assert!(answers(
+            &rsp("02050421000001010101800c800c"),
+            &dpi_write,
+            &[ANSWERED, PENDING]
+        ));
     }
 
     #[test]
@@ -1158,5 +1298,19 @@ mod tests {
             );
         }
         assert!(Setting::Debounce(0).packet(1).is_ok()); // allowed, like the Python (not advised)
+
+        // A value the CLI refuses can still be restored as read from the mouse...
+        let odd = Setting::DpiStages {
+            dpis: vec![1850],
+            active: 1,
+        };
+        assert!(matches!(odd.packet(1), Err(Error::Input(_))));
+        assert!(odd.packet_unchecked(1).is_ok());
+        // ...but nothing the protocol can't encode.
+        let none = Setting::DpiStages {
+            dpis: vec![],
+            active: 1,
+        };
+        assert!(none.packet_unchecked(1).is_err());
     }
 }

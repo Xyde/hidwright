@@ -5,6 +5,11 @@ edition.workspace = true
 publish.workspace = true
 description = "Talks to the mice: Pulsar X2A, Razer Viper (and RawAccel on Windows)"
 
+# RawAccel's settings.json. `preserve_order` keeps its keys in file order (it has comment keys
+# like "### Accel modes ###"), so a rewrite changes only what we meant to change.
+[dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+
 # Windows: our own thin backend straight on the Win32 API (what hidapi would wrap anyway),
 # because hidapi reads every HID device's strings and descriptors on start-up (~150 ms here).
 [target.'cfg(windows)'.dependencies]
@@ -14,6 +19,9 @@ windows-sys = { version = "0.61", features = [
     "Win32_Storage_FileSystem",
     "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Devices_HumanInterfaceDevice",
+    "Win32_Devices_Properties",          # device instance id (RawAccel's device id)
+    "Win32_UI_Input",                    # Raw Input device list (which mice are plugged in)
+    "Win32_System_SystemInformation",    # local time for backup names and the log
 ] }
 
 # macOS: hidapi over IOKit, opening devices shared so the system keeps using the mouse.

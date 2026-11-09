@@ -1,0 +1,54 @@
+{
+  "### Accel modes ###": "classic | jump | natural",
+  "version": "1.7.0",
+  "defaultDeviceConfig": {
+    "disable": false,
+    "DPI": 0
+  },
+  "profiles": [
+    {
+      "name": "default",
+      "Output DPI": 1000.0,
+      "Degrees of rotation": -2.6,
+      "Input Speed Cap": 0
+    },
+    {
+      "name": "Pulsar X2A",
+      "Output DPI": 1000.0,
+      "Degrees of rotation": -0.5,
+      "Input Speed Cap": 0
+    },
+    {
+      "name": "Maus \u00fc",
+      "Output DPI": 800.0,
+      "Degrees of rotation": 1.0,
+      "Input Speed Cap": 0
+    },
+    {
+      "name": "Razer Viper",
+      "Output DPI": 1000.0,
+      "Degrees of rotation": 3.0,
+      "Input Speed Cap": 0
+    }
+  ],
+  "devices": [
+    {
+      "name": "Pulsar X2A",
+      "profile": "Pulsar X2A",
+      "id": "HID\\VID_3710&PID_1404&MI_00",
+      "config": {
+        "disable": false,
+        "DPI": 0
+      }
+    },
+    {
+      "name": "Razer Viper",
+      "profile": "Razer Viper",
+      "id": "HID\\VID_1532&PID_0078&MI_00",
+      "config": {
+        "disable": false,
+        "DPI": 0
+      }
+    }
+  ]
+}

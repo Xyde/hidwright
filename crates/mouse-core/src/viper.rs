@@ -159,6 +159,16 @@ impl Viper {
         ))
     }
 
+    /// Change the current DPI without saving it (NOSTORE): the mouse forgets it on replug, and
+    /// its DPI stages are left alone. Used only by calibration runs and their restore.
+    pub fn set_dpi_temporary(&self, x: u16, y: u16) -> Result<()> {
+        if !(100..=20000).contains(&x) || !(100..=20000).contains(&y) {
+            return Err(Error::Input("DPI out of range".into()));
+        }
+        self.request(0x04, 0x05, 0x07, &temporary_dpi_args(x, y))?;
+        Ok(())
+    }
+
     pub fn dpi_stages(&self) -> Result<(u8, Vec<(u16, u16)>)> {
         let a = self.request(0x04, 0x86, 0x26, &[VARSTORE])?;
         Ok(parse_dpi_stages(&a))
@@ -183,6 +193,12 @@ impl Viper {
             errors,
         }
     }
+}
+
+/// Arguments of a DPI set (04/05): NOSTORE, x and y big-endian, 2 reserved.
+fn temporary_dpi_args(x: u16, y: u16) -> [u8; 7] {
+    let ([xh, xl], [yh, yl]) = (x.to_be_bytes(), y.to_be_bytes());
+    [NOSTORE, xh, xl, yh, yl, 0, 0]
 }
 
 /// Stage reply arguments: `[1]` active stage, `[2]` count, then 7 bytes per stage from `[3]`:
@@ -238,6 +254,25 @@ mod tests {
                 want,
                 "{class:02x}/{cmd:02x}"
             );
+        }
+    }
+
+    /// `set_dpi_temporary(3200)` and `(400, 1600)` as the Python sends them (fake hid.dll).
+    #[test]
+    fn temporary_dpi_matches_python() {
+        let cases: [((u16, u16), &str); 2] = [
+            (
+                (3200, 3200),
+                "001f000000070405000c800c800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600",
+            ),
+            (
+                (400, 1600),
+                "001f0000000704050001900640000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000d100",
+            ),
+        ];
+        for ((x, y), want) in cases {
+            let req = build_request(0x1F, 0x04, 0x05, 0x07, &temporary_dpi_args(x, y));
+            assert_eq!(hex(&req), want, "{x}x{y}");
         }
     }
 
