@@ -1,5 +1,6 @@
 # Builds and tests on every push and pull request. No mice in the cloud: this runs the unit
 # tests (packet bytes, reply parsing); hardware checks stay manual (see HANDOFF.md).
+# Each run keeps the built programs for download (Windows exes, macOS tar).
 name: CI
 
 on:
@@ -18,7 +19,7 @@ jobs:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -30,13 +31,35 @@ jobs:
         run: cargo test
       - name: Release build
         run: cargo build --release
+      # The built programs, downloadable from the run's page (ticket px-v9l3).
+      - name: Upload (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: set-mouse-windows-${{ runner.arch }}
+          path: |
+            target/release/set-mouse.exe
+            target/release/set-mouse-startup.exe
+          if-no-files-found: error
+      # Artifacts are zipped without file permissions, so pack the macOS program in a tar
+      # that keeps it executable. The sign-in loader is Windows-only (RawAccel).
+      - name: Pack (macOS)
+        if: runner.os == 'macOS'
+        run: tar -czf set-mouse-macos.tar.gz -C target/release set-mouse
+      - name: Upload (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: set-mouse-macos-${{ runner.arch }}
+          path: set-mouse-macos.tar.gz
+          if-no-files-found: error
 
   python:
     name: Python (windows-latest)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
       - name: Byte-compile every module
